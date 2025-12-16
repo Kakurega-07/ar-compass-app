@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Location-Based AR Selection Menu & Scale Reset</title>
+    <title>Location-Based AR Selection Menu & Model Stability</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimal-ui">
     <style>
         /* 全画面コンテナ */
@@ -189,7 +189,7 @@
                 modelPath: './assets/fuji.glb',
                 lat: 35.3606,
                 lng: 138.7274,
-                targetScale: 1.0, // << 修正: スケールを元のサイズ (1.0) に戻す
+                targetScale: 1.0, // モデル崩れ防止のため、スケールは一旦1.0に戻す
                 offsetX: 0 
             },
             {
@@ -198,7 +198,7 @@
                 modelPath: './assets/ra.glb',
                 lat: 34.6851,
                 lng: 135.8398,
-                targetScale: 1.0, // << 修正: スケールを元のサイズ (1.0) に戻す
+                targetScale: 1.0,
                 offsetX: 0 
             }
         ];
@@ -221,7 +221,7 @@
 
 
         // =======================================================================
-        // 6. モデル配置ロジック
+        // 6. モデル配置ロジック (モデル表示の安定化)
         // =======================================================================
 
         /**
@@ -259,13 +259,13 @@
             const modelPosString = `${target.offsetX} 0 ${-VIRTUAL_DISTANCE_M}`; 
             modelEntity.setAttribute('position', modelPosString);
 
-            // GLTFモデルを設定。
+            // GLTFモデルを設定し、スケールをここで設定することで表示崩れを防ぎ、モデルが表示されない問題を軽減する
+            const s = target.targetScale;
             modelEntity.setAttribute('gltf-model', `url(${target.modelPath})`);
-            
-            // モデルが読み込まれたら、正しいスケールを適用
+            modelEntity.setAttribute('scale', `${s} ${s} ${s}`); // スケールを即時適用
+
+            // AR.jsでモデルが読み込まれたことだけを確認する（スケール適用はもう不要だが、ステータス更新のため残す）
             modelEntity.addEventListener('model-loaded', () => {
-                const s = target.targetScale;
-                modelEntity.setAttribute('scale', `${s} ${s} ${s}`);
                 AR_STATUS.textContent = `ステータス: ${target.name} AR準備完了`;
             });
 
@@ -344,18 +344,21 @@
             } else if (currentLocation) {
                 setupAREntities(id); // ターゲットを再配置
             } else {
-                // GPSがまだ取得できていない場合の再試行 (通常は不要)
                 initialStartAR(id);
             }
             toggleSelectionOverlay(); // オーバーレイを閉じる
         }
 
         /**
-         * 3. ターゲット選択オーバーレイの表示/非表示を切り替える
+         * 3. ターゲット選択オーバーレイの表示/非表示を切り替える (ハンバーガーメニューの核となる機能)
          */
         function toggleSelectionOverlay() {
-            // オーバーレイの表示状態を切り替える
-            SELECTION_OVERLAY.style.display = SELECTION_OVERLAY.style.display === 'flex' ? 'none' : 'flex';
+            // オーバーレイの display 状態を切り替える
+            if (SELECTION_OVERLAY.style.display === 'flex') {
+                SELECTION_OVERLAY.style.display = 'none';
+            } else {
+                SELECTION_OVERLAY.style.display = 'flex';
+            }
         }
 
         /**
