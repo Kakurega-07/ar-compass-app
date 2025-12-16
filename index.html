@@ -6,7 +6,120 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>方位AR</title>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+    <!-- AR.js (位置情報ベース) -->
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <!-- GPS / Location-based AR コンポーネント -->
+    <script src="https://unpkg.com/aframe-gps-camera@1.7.5/dist/aframe-gps-camera.min.js"></script>
+    <script src="https://unpkg.com/aframe-gps-entity-place@1.8.0/dist/aframe-gps-entity-place.min.js"></script>
+    <!-- look-at コンポーネント（A-Frame 用） -->
+    <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
+
+    <script>
+        // rotation-reader: カメラの回転を取得する簡易コンポーネント
+        AFRAME.registerComponent('rotation-reader', {
+            tick: function () {
+                // 要素の回転を読み取り、必要に応じてデバッグ出力可能にする
+                this.rotation = this.el.getAttribute('rotation');
+            }
+        });
+    </script>
+
+    <script>
+        // show-on-bearing: 端末がターゲット方角を向いたときのみ表示するコンポーネント
+        AFRAME.registerComponent('show-on-bearing', {
+            schema: {
+                latitude: { type: 'number', default: 0 },
+                longitude: { type: 'number', default: 0 },
+                tolerance: { type: 'number', default: 20 }, // 許容角度（度）
+                distance: { type: 'number', default: 30 }
+            },
+            init: function () {
+                this.targetBearing = null;
+                this.deviceHeading = null;
+                this.placed = false;
+                this.el.setAttribute('visible', 'false');
+
+                window.addEventListener('gps-camera-update-position', (e) => {
+                    const pos = e.detail.position;
+                    this.targetBearing = this.calculateBearing(pos.latitude, pos.longitude, this.data.latitude, this.data.longitude);
+                    const dest = this.calculateDestination(pos.latitude, pos.longitude, this.targetBearing, this.data.distance);
+                    this.el.setAttribute('gps-entity-place', `latitude: ${dest.latitude}; longitude: ${dest.longitude};`);
+                    this.placed = true;
+                    console.log('show-on-bearing: placed at bearing', this.targetBearing);
+                    this.updateVisibility();
+                });
+
+                const handleOrientation = (ev) => {
+                    let heading = null;
+                    if (ev && ev.webkitCompassHeading) heading = ev.webkitCompassHeading; // iOS
+                    else if (ev && typeof ev.alpha === 'number') {
+                        heading = 360 - ev.alpha;
+                    }
+                    if (heading !== null) {
+                        this.deviceHeading = (heading + 360) % 360;
+                        this.updateVisibility();
+                    }
+                };
+
+                window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+                window.addEventListener('deviceorientation', handleOrientation, true);
+
+                if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    const btn = document.createElement('button');
+                    btn.innerText = 'Enable Compass';
+                    btn.style.position = 'absolute';
+                    btn.style.top = '12px';
+                    btn.style.right = '12px';
+                    btn.style.zIndex = 9999;
+                    btn.style.padding = '8px 10px';
+                    btn.style.fontSize = '12px';
+                    btn.addEventListener('click', () => {
+                        DeviceOrientationEvent.requestPermission().then(response => {
+                            if (response === 'granted') btn.remove();
+                            else alert('コンパスの許可が必要です');
+                        }).catch(() => alert('コンパス許可に失敗しました'));
+                    });
+                    document.body.appendChild(btn);
+                }
+            },
+
+            updateVisibility: function () {
+                if (!this.placed || this.targetBearing === null || this.deviceHeading === null) {
+                    this.el.setAttribute('visible', 'false');
+                    return;
+                }
+                let diff = Math.abs(this.targetBearing - this.deviceHeading);
+                if (diff > 180) diff = 360 - diff;
+                const show = diff <= this.data.tolerance;
+                this.el.setAttribute('visible', show ? 'true' : 'false');
+                console.log('show-on-bearing: target=', this.targetBearing.toFixed(1), 'heading=', this.deviceHeading.toFixed(1), 'diff=', diff.toFixed(1), 'show=', show);
+            },
+
+            calculateBearing: function (startLat, startLng, destLat, destLng) {
+                const y = Math.sin((destLng - startLng) * Math.PI / 180) * Math.cos(destLat * Math.PI / 180);
+                const x = Math.cos(startLat * Math.PI / 180) * Math.sin(destLat * Math.PI / 180) -
+                    Math.sin(startLat * Math.PI / 180) * Math.cos(destLat * Math.PI / 180) * Math.cos((destLng - startLng) * Math.PI / 180);
+                const brng = Math.atan2(y, x) * 180 / Math.PI;
+                return (brng + 360) % 360;
+            },
+
+            calculateDestination: function (lat, lng, bearing, distance) {
+                const R = 6371e3;
+                const d = distance;
+                const lat1 = lat * Math.PI / 180;
+                const lon1 = lng * Math.PI / 180;
+                const brng = bearing * Math.PI / 180;
+
+                const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d / R) + Math.cos(lat1) * Math.sin(d / R) * Math.cos(brng));
+                const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(d / R) * Math.cos(lat1), Math.cos(d / R) - Math.sin(lat1) * Math.sin(lat2));
+
+                return {
+                    latitude: lat2 * 180 / Math.PI,
+                    longitude: lon2 * 180 / Math.PI
+                };
+            }
+        });
+    </script>
 
     <script>
         // ==========================================
@@ -114,6 +227,7 @@
             周囲を見回して、富士山や蘭奢待を探してください。<br>
             <small>※オブジェクトは30m先に表示されます</small>
         </div>
+        <div id="debugInfo" style="position: absolute; bottom: 12px; left: 12px; z-index:11; color: #fff; background: rgba(0,0,0,0.5); padding:6px 8px; border-radius:6px; font-family: monospace; font-size:12px; pointer-events: none;">デバッグ: 未取得</div>
     </div>
 
     <a-scene
@@ -124,20 +238,39 @@
         <a-camera gps-camera rotation-reader></a-camera>
 
         <a-entity
-            direction-target="latitude: 35.3606; longitude: 138.7274;"
+            show-on-bearing="latitude: 35.3606; longitude: 138.7274; tolerance: 20; distance: 30"
             gltf-model="url(./assets/fuji.glb)"
-            scale="100 100 100"
+            scale="5 5 5"
             look-at="[gps-camera]"
-            position="0 2 0">
+            position="0 2 0"
+            visible="false">
         </a-entity>
         <a-entity
-            direction-target="latitude: 34.6851; longitude: 135.8398;"
+            show-on-bearing="latitude: 34.6851; longitude: 135.8398; tolerance: 20; distance: 30"
             gltf-model="url(./assets/ra.glb)"
-            scale="100 100 100"
+            scale="5 5 5"
             look-at="[gps-camera]"
-            position="0 1 0">
+            position="0 1 0"
+            visible="false">
+        </a-entity>
+
+        <!-- デバッグ用: GPSイベントで配置される赤いボックス（簡易確認用） -->
+        <a-entity id="debug-box" show-on-bearing="latitude: 35.3606; longitude: 138.7274; tolerance: 30; distance: 10" visible="false">
+            <a-box color="red" depth="1" height="1" width="1" position="0 0.5 0"></a-box>
         </a-entity>
 
         </a-scene>
 </body>
+    <script>
+        // 画面下部のデバッグ表示を更新
+        window.addEventListener('gps-camera-update-position', function (e) {
+            try {
+                const pos = e.detail.position;
+                const el = document.getElementById('debugInfo');
+                el.innerText = `lat: ${pos.latitude.toFixed(6)}\nlon: ${pos.longitude.toFixed(6)}`;
+            } catch (err) {
+                console.warn('debug update error', err);
+            }
+        });
+    </script>
 </html>
