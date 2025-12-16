@@ -3,84 +3,77 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-    <title>方位AR - 最終確認版</title>
+    <title>Android AR - 方向確認</title>
 
     <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
     <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
 
     <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; font-family: monospace; }
         
-        /* スタートボタン（iOS必須） */
-        #start-screen {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9); z-index: 9999;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            color: white; text-align: center;
-        }
-        #start-btn {
-            padding: 15px 30px; font-size: 20px; background: #28a745; color: white;
-            border: none; border-radius: 50px; cursor: pointer; margin-top: 20px;
-        }
-
-        /* 画面上部のデバッグログ */
-        #debug-log {
-            position: absolute; top: 0; left: 0; width: 100%;
-            background: rgba(0, 0, 0, 0.5); color: #00ff00;
-            padding: 5px; font-size: 12px; pointer-events: none; z-index: 100;
+        /* 画面上部のデバッグ表示（ここで動作状況を確認します） */
+        #debug-console {
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            background: rgba(0,0,0,0.6); 
+            color: #00ff00; 
+            padding: 10px; 
+            pointer-events: none; 
+            z-index: 999;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
         }
     </style>
 
     <script>
-        // ログ表示用関数
-        function log(text) {
-            const el = document.getElementById('debug-log');
-            if(el) el.innerHTML = text + "<br>" + el.innerHTML;
-            console.log(text);
+        // 画面にログを出す関数
+        function debugLog(msg) {
+            const el = document.getElementById('debug-console');
+            if(el) el.innerHTML = msg; // 常に最新の状態だけ表示
         }
 
-        // ==========================================
-        // コンポーネント: 指定方位・固定距離に置く
-        // ==========================================
-        AFRAME.registerComponent('fixed-direction', {
+        AFRAME.registerComponent('fixed-bearing', {
             schema: {
                 latitude: { type: 'number', default: 0 },
                 longitude: { type: 'number', default: 0 },
-                distance: { type: 'number', default: 10 }, // 10メートル先に固定
-                name: { type: 'string', default: 'Target' }
+                distance: { type: 'number', default: 5 }, // 5メートル先に固定
+                name: { type: 'string', default: '' }
             },
             init: function () {
                 this.placed = false;
-                
-                // GPS更新を監視
+
+                // GPS更新イベント
                 window.addEventListener('gps-camera-update-position', (e) => {
-                    if(this.placed) return; // 初回のみ設定
+                    // 一度配置したら固定する（チラつき防止）
+                    if(this.placed) return;
 
-                    const pos = e.detail.position;
-                    log(`GPS取得: ${this.data.name}の方角計算中...`);
-
-                    // 方位角(Bearing)を計算
-                    const bearing = this.calculateBearing(pos.latitude, pos.longitude, this.data.latitude, this.data.longitude);
+                    const userPos = e.detail.position;
                     
-                    // A-Frame座標に変換 (北=-Z)
-                    // 角度をラジアンに変換
+                    // 1. 方位角(Bearing)を計算
+                    const bearing = this.calculateBearing(
+                        userPos.latitude, userPos.longitude,
+                        this.data.latitude, this.data.longitude
+                    );
+
+                    // 2. その方角の座標を計算 (北 = -Z)
                     const theta = bearing * (Math.PI / 180);
-                    // x = d * sin(θ), z = -d * cos(θ)
                     const x = this.data.distance * Math.sin(theta);
                     const z = -1 * this.data.distance * Math.cos(theta);
 
-                    // 座標をセット
-                    this.el.setAttribute('position', {x: x, y: 1, z: z}); // y=1 (目の高さ)
+                    // 3. 配置
+                    this.el.setAttribute('position', { x: x, y: 1.5, z: z });
+                    this.el.setAttribute('visible', true);
                     
-                    // 表示ON
-                    this.el.setAttribute('visible', 'true');
-                    
-                    log(`配置完了: ${this.data.name} (方位${Math.round(bearing)}度)`);
                     this.placed = true;
+                    console.log(`[${this.data.name}] Placed at bearing: ${Math.round(bearing)}deg`);
                 });
             },
 
+            // 方位角計算ロジック
             calculateBearing: function (startLat, startLng, destLat, destLng) {
                 const y = Math.sin(destLng * Math.PI / 180 - startLng * Math.PI / 180) * Math.cos(destLat * Math.PI / 180);
                 const x = Math.cos(startLat * Math.PI / 180) * Math.sin(destLat * Math.PI / 180) -
@@ -90,36 +83,25 @@
             }
         });
 
-        // iOS用スタートボタン処理
-        function startAR() {
-            // iOSのセンサー許可リクエスト
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission()
-                    .then(response => {
-                        if (response === 'granted') {
-                            log("センサー許可: OK");
-                            document.getElementById('start-screen').style.display = 'none';
-                        } else {
-                            alert('許可されませんでした。ARが正しく動作しません。');
-                        }
-                    })
-                    .catch(console.error);
-            } else {
-                // Android等はそのまま開始
-                document.getElementById('start-screen').style.display = 'none';
+        // 常に画面にGPSの状態を表示するループ
+        AFRAME.registerComponent('gps-debugger', {
+            tick: function() {
+                const cam = this.el.components['gps-camera'];
+                if(!cam) return;
+                
+                // カメラの回転（コンパス方位）を取得
+                // Y回転が方位にあたります
+                const rot = this.el.getAttribute('rotation');
+                const compass = rot.y ? rot.y.toFixed(0) : '---';
+
+                debugLog(`★システム稼働中\nコンパス方位: ${compass}°\n(スマホを回して数値が変わるか確認)`);
             }
-        }
+        });
     </script>
 </head>
 
 <body>
-    <div id="debug-log">システム待機中...</div>
-
-    <div id="start-screen">
-        <h1>AR方位コンパス</h1>
-        <p>カメラと位置情報を許可してください</p>
-        <button id="start-btn" onclick="startAR()">ここを押してARを開始</button>
-    </div>
+    <div id="debug-console">初期化中...<br>GPSを取得しています</div>
 
     <a-scene
         vr-mode-ui="enabled: false"
@@ -127,31 +109,31 @@
         arjs='sourceType: webcam; videoTexture: true; debugUIEnabled: false;'
         renderer="antialias: true; alpha: true;">
 
-        <a-camera gps-camera="gpsMinDistance: 5" rotation-reader></a-camera>
+        <a-camera gps-camera="gpsMinDistance: 5" rotation-reader gps-debugger></a-camera>
 
         <a-entity position="0 0 -5" look-at="[gps-camera]">
-            <a-box color="red" scale="1 1 1"></a-box>
-            <a-text value="NORTH (TEST)" align="center" position="0 1.5 0" color="red"></a-text>
+            <a-box color="red" scale="0.5 0.5 0.5"></a-box>
+            <a-text value="NORTH" color="red" align="center" position="0 1 0" scale="2 2 2"></a-text>
         </a-entity>
 
 
-        <a-entity fixed-direction="latitude: 35.3606; longitude: 138.7274; name: Fuji;" visible="false">
+        <a-entity fixed-bearing="latitude: 35.3606; longitude: 138.7274; distance: 5; name: Fuji" visible="false">
             
             <a-entity gltf-model="url(./assets/fuji.glb)" scale="1 1 1" look-at="[gps-camera]"></a-entity>
             
-            <a-text value="Mt. FUJI" color="cyan" position="0 2 0" align="center" scale="2 2 2" look-at="[gps-camera]"></a-text>
-            <a-cone color="blue" radius-bottom="1" radius-top="0" height="2" position="0 -1 0" opacity="0.5"></a-cone>
-        
+            <a-cone color="cyan" radius-bottom="0.5" radius-top="0" height="1" position="0 -1 0" opacity="0.8"></a-cone>
+            <a-text value="Mt. FUJI" color="cyan" align="center" position="0 2 0" scale="2 2 2" look-at="[gps-camera]"></a-text>
+
         </a-entity>
 
 
-        <a-entity fixed-direction="latitude: 34.6851; longitude: 135.8398; name: Ranjatai;" visible="false">
+        <a-entity fixed-bearing="latitude: 34.6851; longitude: 135.8398; distance: 5; name: Ranjatai" visible="false">
             
             <a-entity gltf-model="url(./assets/ra.glb)" scale="1 1 1" look-at="[gps-camera]"></a-entity>
             
-            <a-text value="RANJATAI" color="yellow" position="0 2 0" align="center" scale="2 2 2" look-at="[gps-camera]"></a-text>
-            <a-sphere color="yellow" radius="0.5" position="0 -1 0" opacity="0.5"></a-sphere>
-        
+            <a-sphere color="yellow" radius="0.3" position="0 -1 0" opacity="0.8"></a-sphere>
+            <a-text value="NARA" color="yellow" align="center" position="0 2 0" scale="2 2 2" look-at="[gps-camera]"></a-text>
+
         </a-entity>
 
     </a-scene>
