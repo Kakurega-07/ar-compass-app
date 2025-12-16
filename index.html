@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Location-Based AR Selection Menu & Model Stability</title>
+    <title>Location-Based AR Stability & Menu Fix</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimal-ui">
     <style>
         /* 全画面コンテナ */
@@ -105,7 +105,8 @@
             height: 100%;
             background-color: rgba(0, 0, 0, 0.9);
             color: white;
-            display: none; /* 初期は非表示 */
+            /* 修正: display: none を指定し、JavaScriptで flex に切り替える */
+            display: none; 
             flex-direction: column;
             justify-content: center;
             align-items: center;
@@ -189,7 +190,7 @@
                 modelPath: './assets/fuji.glb',
                 lat: 35.3606,
                 lng: 138.7274,
-                targetScale: 1.0, // モデル崩れ防止のため、スケールは一旦1.0に戻す
+                targetScale: 1.0, 
                 offsetX: 0 
             },
             {
@@ -221,14 +222,21 @@
 
 
         // =======================================================================
-        // 6. モデル配置ロジック (モデル表示の安定化)
+        // 6. モデル配置ロジック
         // =======================================================================
 
         /**
          * 選択されたターゲットのみを取得し、ARエンティティを配置する
          */
         function setupAREntities(targetId) {
-            if (!currentLocation) return;
+            
+            // GPSデータがない場合でも、ダミー位置（現在地をランダムな日本国内に仮定）で続行する
+            const hasLocation = !!currentLocation;
+            if (!hasLocation) {
+                 // デバッグ用: GPSが取得できない場合、東京タワー付近を仮の現在地として設定
+                currentLocation = { latitude: 35.6586, longitude: 139.7454 };
+                AR_STATUS.textContent = "警告: GPSが取得できませんでした。東京を仮の現在地として計算します。";
+            }
 
             // 既存のARエンティティを全て削除（A-CAMERA以外）
             const entities = AR_SCENE.querySelectorAll('a-entity:not(a-camera)');
@@ -237,7 +245,7 @@
             const selectedTarget = ALL_TARGETS.find(t => t.id === targetId);
             if (!selectedTarget) return;
 
-            AR_STATUS.textContent = `ステータス: ${selectedTarget.name} のARオブジェクト配置中...`;
+            AR_STATUS.textContent = `${selectedTarget.name} のARオブジェクト配置中... (GPS: ${hasLocation ? 'ON' : 'OFF'})`;
 
             const target = selectedTarget;
 
@@ -259,14 +267,22 @@
             const modelPosString = `${target.offsetX} 0 ${-VIRTUAL_DISTANCE_M}`; 
             modelEntity.setAttribute('position', modelPosString);
 
-            // GLTFモデルを設定し、スケールをここで設定することで表示崩れを防ぎ、モデルが表示されない問題を軽減する
+            // GLTFモデルとスケールを設定
             const s = target.targetScale;
             modelEntity.setAttribute('gltf-model', `url(${target.modelPath})`);
-            modelEntity.setAttribute('scale', `${s} ${s} ${s}`); // スケールを即時適用
+            modelEntity.setAttribute('scale', `${s} ${s} ${s}`);
 
-            // AR.jsでモデルが読み込まれたことだけを確認する（スケール適用はもう不要だが、ステータス更新のため残す）
             modelEntity.addEventListener('model-loaded', () => {
-                AR_STATUS.textContent = `ステータス: ${target.name} AR準備完了`;
+                AR_STATUS.textContent = `${target.name} AR準備完了。`;
+                if (!hasLocation) {
+                     AR_STATUS.textContent += ` (仮位置計算中)`;
+                }
+            });
+
+            // モデル読み込みエラー処理（念のため）
+            modelEntity.addEventListener('model-error', (e) => {
+                AR_STATUS.textContent = `エラー: ${target.name} のモデル読み込み失敗 (${e.detail.src})`;
+                console.error(`Model load error for ${target.name}:`, e.detail);
             });
 
             parentEntity.appendChild(modelEntity);
@@ -287,7 +303,7 @@
             parentEntity.appendChild(textEntity);
             AR_SCENE.appendChild(parentEntity);
             
-            currentTargetId = targetId; // 現在表示中のターゲットを記録
+            currentTargetId = targetId; 
         }
 
         // =======================================================================
@@ -300,21 +316,25 @@
         function initialStartAR(id) {
             MENU_SCREEN.style.display = 'none'; 
             AR_SCREEN.style.display = 'block';   
-            AR_STATUS.textContent = "ステータス: 許可リクエスト中...";
+            AR_STATUS.textContent = "ステータス: 許可リクエスト中... (ジャイロ/GPS)";
             currentTargetId = id;
 
             const startGeolocation = () => {
+                // GPSの取得を試みるが、失敗しても続行する
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
                         currentLocation = {
                             latitude: position.coords.latitude,
                             longitude: position.coords.longitude
                         };
+                        AR_STATUS.textContent = `ステータス: GPS取得完了`;
                         setupAREntities(id); // ARオブジェクトを配置
                     },
                     (err) => {
-                        AR_STATUS.textContent = `エラー: GPSが取得できませんでした。`;
-                        console.error('Geolocation Error:', err);
+                        // GPS取得失敗時（ユーザー拒否、タイムアウトなど）
+                        AR_STATUS.textContent = `警告: GPS取得失敗 (Code: ${err.code})。ジャイロのみでARを起動します。`;
+                        currentLocation = null; // 位置情報を使わないことを明示
+                        setupAREntities(id); 
                     },
                     { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
                 );
@@ -325,13 +345,13 @@
                 DeviceOrientationEvent.requestPermission()
                     .then(permissionState => {
                         if (permissionState === 'granted') {
-                            startGeolocation();
+                            startGeolocation(); // ジャイロ許可後、GPSへ
                         } else {
                             AR_STATUS.textContent = "エラー: デバイスの向き（ジャイロ）の許可が必要です。";
                         }
                     });
             } else {
-                startGeolocation();
+                startGeolocation(); // ジャイロ許可不要な環境
             }
         }
 
@@ -341,19 +361,17 @@
         function changeTarget(id) {
             if (id === currentTargetId) {
                 AR_STATUS.textContent = "ステータス: 同じターゲットが選択されました。";
-            } else if (currentLocation) {
-                setupAREntities(id); // ターゲットを再配置
             } else {
-                initialStartAR(id);
+                setupAREntities(id); // ターゲットを再配置 (GPSが取得済みならその位置、なければ仮位置)
             }
             toggleSelectionOverlay(); // オーバーレイを閉じる
         }
 
         /**
-         * 3. ターゲット選択オーバーレイの表示/非表示を切り替える (ハンバーガーメニューの核となる機能)
+         * 3. ターゲット選択オーバーレイの表示/非表示を切り替える (メニュー動作修正)
          */
         function toggleSelectionOverlay() {
-            // オーバーレイの display 状態を切り替える
+            // style.displayの値を直接切り替える (flex <-> none)
             if (SELECTION_OVERLAY.style.display === 'flex') {
                 SELECTION_OVERLAY.style.display = 'none';
             } else {
