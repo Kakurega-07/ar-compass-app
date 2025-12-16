@@ -5,170 +5,51 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>方位AR</title>
-    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-    <!-- AR.js (位置情報ベース) -->
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-    <!-- GPS / Location-based AR コンポーネント -->
-    <script src="https://unpkg.com/aframe-gps-camera@1.7.5/dist/aframe-gps-camera.min.js"></script>
-    <script src="https://unpkg.com/aframe-gps-entity-place@1.8.0/dist/aframe-gps-entity-place.min.js"></script>
-    <!-- look-at コンポーネント（A-Frame 用） -->
-    <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
+    
+    <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+    <script src="https://unpkg.com/vconsole@3.15.0/dist/vconsole.min.js"></script>
 
     <script>
-        // rotation-reader: カメラの回転を取得する簡易コンポーネント
-        AFRAME.registerComponent('rotation-reader', {
-            tick: function () {
-                // 要素の回転を読み取り、必要に応じてデバッグ出力可能にする
-                this.rotation = this.el.getAttribute('rotation');
-            }
-        });
-    </script>
+        // スマホ画面にコンソールログを表示する設定
+        var vConsole = new VConsole();
+        console.log("vConsole initialized. System ready.");
 
-    <script>
-        // show-on-bearing: 端末がターゲット方角を向いたときのみ表示するコンポーネント
-        AFRAME.registerComponent('show-on-bearing', {
-            schema: {
-                latitude: { type: 'number', default: 0 },
-                longitude: { type: 'number', default: 0 },
-                tolerance: { type: 'number', default: 20 }, // 許容角度（度）
-                distance: { type: 'number', default: 30 }
-            },
-            init: function () {
-                this.targetBearing = null;
-                this.deviceHeading = null;
-                this.placed = false;
-                this.el.setAttribute('visible', 'false');
-
-                window.addEventListener('gps-camera-update-position', (e) => {
-                    const pos = e.detail.position;
-                    this.targetBearing = this.calculateBearing(pos.latitude, pos.longitude, this.data.latitude, this.data.longitude);
-                    const dest = this.calculateDestination(pos.latitude, pos.longitude, this.targetBearing, this.data.distance);
-                    this.el.setAttribute('gps-entity-place', `latitude: ${dest.latitude}; longitude: ${dest.longitude};`);
-                    this.placed = true;
-                    console.log('show-on-bearing: placed at bearing', this.targetBearing);
-                    this.updateVisibility();
-                });
-
-                const handleOrientation = (ev) => {
-                    let heading = null;
-                    if (ev && ev.webkitCompassHeading) heading = ev.webkitCompassHeading; // iOS
-                    else if (ev && typeof ev.alpha === 'number') {
-                        heading = 360 - ev.alpha;
-                    }
-                    if (heading !== null) {
-                        this.deviceHeading = (heading + 360) % 360;
-                        this.updateVisibility();
-                    }
-                };
-
-                window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-                window.addEventListener('deviceorientation', handleOrientation, true);
-
-                if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    const btn = document.createElement('button');
-                    btn.innerText = 'Enable Compass';
-                    btn.style.position = 'absolute';
-                    btn.style.top = '12px';
-                    btn.style.right = '12px';
-                    btn.style.zIndex = 9999;
-                    btn.style.padding = '8px 10px';
-                    btn.style.fontSize = '12px';
-                    btn.addEventListener('click', () => {
-                        DeviceOrientationEvent.requestPermission().then(response => {
-                            if (response === 'granted') btn.remove();
-                            else alert('コンパスの許可が必要です');
-                        }).catch(() => alert('コンパス許可に失敗しました'));
-                    });
-                    document.body.appendChild(btn);
-                }
-            },
-
-            updateVisibility: function () {
-                if (!this.placed || this.targetBearing === null || this.deviceHeading === null) {
-                    this.el.setAttribute('visible', 'false');
-                    return;
-                }
-                let diff = Math.abs(this.targetBearing - this.deviceHeading);
-                if (diff > 180) diff = 360 - diff;
-                const show = diff <= this.data.tolerance;
-                this.el.setAttribute('visible', show ? 'true' : 'false');
-                console.log('show-on-bearing: target=', this.targetBearing.toFixed(1), 'heading=', this.deviceHeading.toFixed(1), 'diff=', diff.toFixed(1), 'show=', show);
-            },
-
-            calculateBearing: function (startLat, startLng, destLat, destLng) {
-                const y = Math.sin((destLng - startLng) * Math.PI / 180) * Math.cos(destLat * Math.PI / 180);
-                const x = Math.cos(startLat * Math.PI / 180) * Math.sin(destLat * Math.PI / 180) -
-                    Math.sin(startLat * Math.PI / 180) * Math.cos(destLat * Math.PI / 180) * Math.cos((destLng - startLng) * Math.PI / 180);
-                const brng = Math.atan2(y, x) * 180 / Math.PI;
-                return (brng + 360) % 360;
-            },
-
-            calculateDestination: function (lat, lng, bearing, distance) {
-                const R = 6371e3;
-                const d = distance;
-                const lat1 = lat * Math.PI / 180;
-                const lon1 = lng * Math.PI / 180;
-                const brng = bearing * Math.PI / 180;
-
-                const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d / R) + Math.cos(lat1) * Math.sin(d / R) * Math.cos(brng));
-                const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(d / R) * Math.cos(lat1), Math.cos(d / R) - Math.sin(lat1) * Math.sin(lat2));
-
-                return {
-                    latitude: lat2 * 180 / Math.PI,
-                    longitude: lon2 * 180 / Math.PI
-                };
-            }
-        });
-    </script>
-
-    <script>
-        // ==========================================
-        // カスタムコンポーネント: 指定した緯度経度の方角に、固定距離で配置する
-        // ==========================================
+        // ==================================================
+        // 自動配置コンポーネント (GPS取得時に30m先に置く)
+        // ==================================================
         AFRAME.registerComponent('direction-target', {
             schema: {
                 latitude: { type: 'number', default: 0 },
                 longitude: { type: 'number', default: 0 },
-                distance: { type: 'number', default: 30 } // 表示する距離(メートル)。30m先に表示
+                distance: { type: 'number', default: 30 }
             },
             init: function () {
                 this.processed = false;
-                // GPSの更新イベントをリッスン
                 window.addEventListener('gps-camera-update-position', (e) => {
-                    if(this.processed) return; // 一度設定したら動かさない（固定）
+                    if(this.processed) return;
                     
-                    // 現在地を取得
-                    const currentPos = e.detail.position; 
+                    const pos = e.detail.position;
+                    console.log(`GPS Update: Lat ${pos.latitude.toFixed(5)} / Lon ${pos.longitude.toFixed(5)}`);
                     
-                    // ターゲットの方角（Bearing）を計算
-                    const bearing = this.calculateBearing(
-                        currentPos.latitude, 
-                        currentPos.longitude, 
-                        this.data.latitude, 
-                        this.data.longitude
-                    );
+                    // 目的地の座標計算
+                    const bearing = this.calculateBearing(pos.latitude, pos.longitude, this.data.latitude, this.data.longitude);
+                    const dest = this.calculateDestination(pos.latitude, pos.longitude, bearing, this.data.distance);
 
-                    // その方角の「すぐ近く（distanceメートル先）」の座標を計算
-                    const newCoords = this.calculateDestination(
-                        currentPos.latitude,
-                        currentPos.longitude,
-                        bearing,
-                        this.data.distance
-                    );
-
-                    // 計算した「近くの座標」をエンティティにセット
+                    // 座標セット
                     this.el.setAttribute('gps-entity-place', {
-                        latitude: newCoords.latitude,
-                        longitude: newCoords.longitude
+                        latitude: dest.latitude,
+                        longitude: dest.longitude
                     });
-
-                    // 完了フラグ
+                    
+                    // モデルを見えるようにする
+                    this.el.setAttribute('visible', 'true');
                     this.processed = true;
-                    console.log(`Object placed at bearing ${bearing} deg, dist ${this.data.distance}m`);
+                    console.log(`Object placed! Bearing: ${bearing.toFixed(0)}deg`);
                 });
             },
-
-            // 2点間の方位角を計算する関数
+            
+            // 計算ロジック
             calculateBearing: function (startLat, startLng, destLat, destLng) {
                 const y = Math.sin(destLng * Math.PI / 180 - startLng * Math.PI / 180) * Math.cos(destLat * Math.PI / 180);
                 const x = Math.cos(startLat * Math.PI / 180) * Math.sin(destLat * Math.PI / 180) -
@@ -176,101 +57,92 @@
                 const brng = Math.atan2(y, x) * 180 / Math.PI;
                 return (brng + 360) % 360;
             },
-
-            // 指定した距離・方角の座標を求める関数
             calculateDestination: function(lat, lng, bearing, distance) {
-                const R = 6371e3; // 地球の半径 (m)
+                const R = 6371e3; 
                 const d = distance;
                 const lat1 = lat * Math.PI / 180;
                 const lon1 = lng * Math.PI / 180;
                 const brng = bearing * Math.PI / 180;
-
-                const lat2 = Math.asin( Math.sin(lat1)*Math.cos(d/R) +
-                    Math.cos(lat1)*Math.sin(d/R)*Math.cos(brng) );
-                const lon2 = lon1 + Math.atan2(Math.sin(brng)*Math.sin(d/R)*Math.cos(lat1),
-                    Math.cos(d/R)-Math.sin(lat1)*Math.sin(lat2));
-
-                return {
-                    latitude: lat2 * 180 / Math.PI,
-                    longitude: lon2 * 180 / Math.PI
-                };
+                const lat2 = Math.asin( Math.sin(lat1)*Math.cos(d/R) + Math.cos(lat1)*Math.sin(d/R)*Math.cos(brng) );
+                const lon2 = lon1 + Math.atan2(Math.sin(brng)*Math.sin(d/R)*Math.cos(lat1), Math.cos(d/R)-Math.sin(lat1)*Math.sin(lat2));
+                return { latitude: lat2 * 180 / Math.PI, longitude: lon2 * 180 / Math.PI };
             }
         });
+
+        // ==================================================
+        // iOS用: スタートボタンの処理
+        // ==================================================
+        window.onload = function() {
+            const btn = document.getElementById('start-btn');
+            btn.addEventListener('click', function() {
+                // iOS 13+ DeviceOrientation permission
+                if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission()
+                        .then(response => {
+                            if (response == 'granted') {
+                                console.log("Compass Permission Granted");
+                                hideSplash();
+                            } else {
+                                alert("コンパス許可が必要です");
+                            }
+                        })
+                        .catch(console.error);
+                } else {
+                    hideSplash();
+                }
+            });
+        };
+
+        function hideSplash() {
+            document.getElementById('splash').style.display = 'none';
+        }
     </script>
 
     <style>
         body { margin: 0; overflow: hidden; }
-        .ui-layer {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            z-index: 10;
+        /* スタート画面 */
+        #splash {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); z-index: 9999;
+            display: flex; justify-content: center; align-items: center; flex-direction: column;
         }
-        .message {
-            margin-top: 20px;
-            background: rgba(0, 0, 0, 0.6);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 20px;
-            font-family: sans-serif;
-            text-align: center;
+        #start-btn {
+            padding: 15px 40px; font-size: 20px; background: #007AFF; color: white;
+            border: none; border-radius: 30px; cursor: pointer;
         }
     </style>
 </head>
 
 <body>
-    <div class="ui-layer">
-        <div class="message">
-            周囲を見回して、富士山や蘭奢待を探してください。<br>
-            <small>※オブジェクトは30m先に表示されます</small>
-        </div>
-        <div id="debugInfo" style="position: absolute; bottom: 12px; left: 12px; z-index:11; color: #fff; background: rgba(0,0,0,0.5); padding:6px 8px; border-radius:6px; font-family: monospace; font-size:12px; pointer-events: none;">デバッグ: 未取得</div>
+    <div id="splash">
+        <button id="start-btn">ARを開始する</button>
+        <p style="color:white; margin-top:20px;">※カメラと位置情報を許可してください</p>
     </div>
 
     <a-scene
         vr-mode-ui="enabled: false"
         embedded
-        arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: true;">
+        arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;">
 
         <a-camera gps-camera rotation-reader></a-camera>
 
-        <a-entity show-on-bearing="latitude: 35.3606; longitude: 138.7274; tolerance: 20; distance: 30">
-            <a-entity gltf-model="./assets/fuji.glb" scale="1 1 1" look-at="[gps-camera]"></a-entity>
-        </a-entity>
-        <a-entity show-on-bearing="latitude: 34.6873; longitude: 135.5262; tolerance: 20; distance: 30">
-            <a-entity gltf-model="./assets/ra.glb" scale="1 1 1" look-at="[gps-camera]"></a-entity>
+        <a-entity direction-target="latitude: 90; longitude: 0; distance: 10">
+            <a-box color="red" scale="2 2 2" position="0 2 0"></a-box>
+            <a-text value="NORTH" color="white" align="center" position="0 4 0" scale="5 5 5" look-at="[gps-camera]"></a-text>
         </a-entity>
 
-        <!-- テスト用: GLBの代わりにシンプルな緑のボックス -->
-        <a-entity direction-target="latitude: 35.3606; longitude: 138.7274; distance: 15">
-            <a-box color="green" depth="3" height="3" width="3" position="0 1.5 0"></a-box>
+        <a-entity
+            direction-target="latitude: 35.3606; longitude: 138.7274; distance: 30"
+            look-at="[gps-camera]">
+            <a-entity gltf-model="url(./assets/fuji.glb)" scale="5 5 5" position="0 2 0"></a-entity>
         </a-entity>
 
-        <!-- デバッグ用: GPSイベントで配置される赤いボックス（簡易確認用） -->
-        <a-entity id="debug-box" direction-target="latitude: 35.3606; longitude: 138.7274; distance: 10">
-            <a-box color="red" depth="1" height="1" width="1" position="0 0.5 0"></a-box>
+        <a-entity
+            direction-target="latitude: 34.6851; longitude: 135.8398; distance: 30"
+            look-at="[gps-camera]">
+            <a-entity gltf-model="url(./assets/ra.glb)" scale="5 5 5" position="0 2 0"></a-entity>
         </a-entity>
 
-        <!-- テスト用: シンプルな青いボックス（GLB読み込み確認用） -->
-        <a-entity direction-target="latitude: 35.3606; longitude: 138.7274; distance: 20">
-            <a-box color="blue" depth="2" height="2" width="2" position="0 1 0"></a-box>
-        </a-entity>
-
-        </a-scene>
+    </a-scene>
 </body>
-    <script>
-        // 画面下部のデバッグ表示を更新
-        window.addEventListener('gps-camera-update-position', function (e) {
-            try {
-                const pos = e.detail.position;
-                const el = document.getElementById('debugInfo');
-                el.innerText = `lat: ${pos.latitude.toFixed(6)}\nlon: ${pos.longitude.toFixed(6)}`;
-            } catch (err) {
-                console.warn('debug update error', err);
-            }
-        });
-    </script>
 </html>
