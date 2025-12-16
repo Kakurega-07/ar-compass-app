@@ -37,33 +37,6 @@
     
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
-    
-    <script>
-        AFRAME.registerComponent('gltf-fallback', {
-            init: function () {
-                const el = this.el;
-                const targetName = el.dataset.targetName || 'Unknown';
-
-                // モデルがロードされた際のイベント
-                el.addEventListener('model-loaded', function () {
-                    console.log(`[${targetName}] GLTFモデルが正常にロードされました。`);
-                });
-
-                // モデルのロードに失敗した際のイベント
-                el.addEventListener('model-error', function (evt) {
-                    console.error(`[${targetName}] GLTFモデルのロードに失敗しました。パスを確認してください: ${evt.detail.src}`);
-                    // モデルを削除し、代わりに赤いボックスを配置
-                    el.removeAttribute('gltf-model');
-                    
-                    const fallbackBox = document.createElement('a-box');
-                    fallbackBox.setAttribute('color', 'red');
-                    fallbackBox.setAttribute('scale', '0.5 0.5 0.5');
-                    fallbackBox.setAttribute('position', '0 0.25 0'); // 地面から少し持ち上げる
-                    el.appendChild(fallbackBox);
-                });
-            }
-        });
-    </script>
 </head>
 <body>
 
@@ -98,14 +71,15 @@
                 modelPath: './assets/fuji.glb', // 富士山のglbモデルパス
                 lat: 35.3606,
                 lng: 138.7274,
-                scale: '0.5 0.5 0.5' 
+                scale: '0.5 0.5 0.5' // 富士山: 0.5倍
             },
             {
                 name: 'Ranjatai (蘭奢待 - 正倉院)',
-                modelPath: './assets/ra.glb', // 蘭奢待のglbモデルパス (パスを確認してください)
+                modelPath: './assets/ra.glb', // 蘭奢待のglbモデルパス
                 lat: 34.6851,
                 lng: 135.8398,
-                scale: '0.5 0.5 0.5' // << 修正: スケールを0.5倍に統一して視認性を高める
+                // << 修正: 蘭奢待の視認性向上のため、スケールを0.5倍に統一
+                scale: '0.5 0.5 0.5' 
             }
         ];
 
@@ -138,6 +112,8 @@
          * 方位角と仮想距離から、A-Frameのローカル座標(x, y, z)を計算する
          */
         function bearingToLocalPosition(bearing, distance) {
+            // 角度をラジアンに変換（Z軸負方向=前方、X軸正方向=右、Y軸正方向=上）
+            // AR.jsのrotation-readerは真北(0度)をZ軸負方向に対応させるため、90-bearingを使用
             const angleRad = (90 - bearing) * Math.PI / 180;
             
             const x = distance * Math.cos(angleRad);
@@ -182,10 +158,6 @@
                 // 3. A-Frameエンティティを作成し、ローカル座標に配置
                 const entity = document.createElement('a-entity');
                 
-                // フォールバック処理用のカスタムコンポーネントを追加
-                entity.setAttribute('gltf-fallback', '');
-                entity.dataset.targetName = target.name;
-                
                 // 3Dモデルを読み込むための設定
                 entity.setAttribute('gltf-model', `url(${target.modelPath})`);
                 
@@ -196,16 +168,19 @@
                 entity.setAttribute('scale', target.scale); 
                 
                 // ターゲット名を見やすいようにタグとして表示
+                entity.setAttribute('look-at', '[gps-camera]'); // カメラの方を向く
+                
+                // フォールバック/確認用のテキストエンティティ
                 const textEntity = document.createElement('a-entity');
                 textEntity.setAttribute('text', {
-                    value: target.name,
+                    value: target.name + `\nBearing: ${bearing.toFixed(0)}°`, // 方位角も表示
                     align: 'center',
                     color: '#FFF',
                     wrapCount: 30,
                     width: 4
                 });
-                textEntity.setAttribute('position', `0 2.5 0`); // モデルの上に配置
-                textEntity.setAttribute('look-at', '[gps-camera]'); // カメラの方を向く
+                // << 修正: テキストをモデルより高めに設定 (Y=3)
+                textEntity.setAttribute('position', `0 3 0`); 
                 entity.appendChild(textEntity);
 
                 // シーンに追加
