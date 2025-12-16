@@ -2,26 +2,64 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Location-Based AR with A-Frame & AR.js</title>
+    <title>Location-Based AR Selection Menu</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimal-ui">
     <style>
-        /* 許可ボタンを中央に配置するための基本的なスタイル */
-        #ar-button {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+        /* 全画面コンテナ */
+        #container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* ------------------------------------- */
+        /* メニュー画面 (初期表示) */
+        /* ------------------------------------- */
+        #menu-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 2000;
+        }
+
+        #menu-screen button {
             padding: 15px 30px;
+            margin: 10px;
             font-size: 1.2em;
             background-color: #007bff;
             color: white;
             border: none;
             border-radius: 8px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-            z-index: 1000;
             cursor: pointer;
-            display: block; /* 初期表示 */
         }
+
+        /* ------------------------------------- */
+        /* AR画面 (選択後に表示) */
+        /* ------------------------------------- */
+        #ar-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            /* 選択されるまで非表示 */
+            display: none; 
+        }
+
+        /* ARステータス表示エリア */
         #ar-status {
             position: fixed;
             top: 10px;
@@ -33,6 +71,12 @@
             font-size: 0.9em;
             z-index: 1000;
         }
+        
+        /* A-Frameシーンを全画面表示 */
+        a-scene {
+            height: 100%;
+            width: 100%;
+        }
     </style>
     
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
@@ -40,61 +84,74 @@
 </head>
 <body>
 
-    <div id="ar-status">ステータス: 初期化中...</div>
+    <div id="container">
+        
+        <div id="menu-screen">
+            <h1>表示するターゲットを選択してください</h1>
+            <button onclick="startAR('fuji')">🗻 富士山</button>
+            <button onclick="startAR('ranjatai')">🌿 蘭奢待 (正倉院)</button>
+        </div>
 
-    <button id="ar-button" onclick="requestDeviceOrientationAndStartAR()">Start AR & Location</button>
+        <div id="ar-screen">
+            <div id="ar-status">ステータス: 初期化中...</div>
 
-    <a-scene 
-        vr-mode-ui="enabled: false" 
-        embedded 
-        arjs="sourceType: webcam; debugUIEnabled: false;"
-    >
-        <a-camera gps-camera rotation-reader></a-camera>
+            <a-scene 
+                id="ar-scene"
+                vr-mode-ui="enabled: false" 
+                embedded 
+                arjs="sourceType: webcam; debugUIEnabled: false;"
+            >
+                <a-camera gps-camera rotation-reader></a-camera>
 
-        </a-scene>
+                </a-scene>
+        </div>
+    </div>
+
 
     <script>
         // =======================================================================
         // 4. 定数定義
         // =======================================================================
-        const AR_SCENE = document.querySelector('a-scene');
+        const AR_SCENE = document.getElementById('ar-scene');
         const AR_STATUS = document.getElementById('ar-status');
-        const AR_BUTTON = document.getElementById('ar-button');
+        const MENU_SCREEN = document.getElementById('menu-screen');
+        const AR_SCREEN = document.getElementById('ar-screen');
 
         // 3Dモデルを配置する、カメラからの仮想的な距離（メートル）
         const VIRTUAL_DISTANCE_M = 8; 
 
-        // ターゲット座標とモデル情報
-        const TARGETS = [
+        // ターゲット座標とモデル情報 (IDを追加)
+        const ALL_TARGETS = [
             {
+                id: 'fuji', // 選択用ID
                 name: 'Mt. Fuji (富士山)',
-                modelPath: './assets/fuji.glb', // 富士山のglbモデルパス
+                modelPath: './assets/fuji.glb',
                 lat: 35.3606,
                 lng: 138.7274,
                 scale: '0.5 0.5 0.5', 
-                offsetX: -1 // << 修正: 左に1メートルずらす
+                offsetX: 0 // 重ならないように、単独選択の場合は中央(0)に配置
             },
             {
+                id: 'ranjatai', // 選択用ID
                 name: 'Ranjatai (蘭奢待 - 正倉院)',
-                modelPath: './assets/ra.glb', // 蘭奢待のglbモデルパス
+                modelPath: './assets/ra.glb',
                 lat: 34.6851,
                 lng: 135.8398,
                 scale: '0.5 0.5 0.5',
-                offsetX: 1 // << 修正: 右に1メートルずらす
+                offsetX: 0 // 重ならないように、単独選択の場合は中央(0)に配置
             }
         ];
 
         let currentLocation = null; // ユーザーの現在地
 
         // =======================================================================
-        // 5. 座標計算ロジック
+        // 5. 座標計算ロジック (変更なし)
         // =======================================================================
 
         /**
          * 2つのGPS座標から方位角（Bearing）を計算する（Haversineの派生）
          */
         function calculateBearing(lat1, lng1, lat2, lng2) {
-            // 度をラジアンに変換
             const R_lat1 = lat1 * Math.PI / 180;
             const R_lat2 = lat2 * Math.PI / 180;
             const R_dLng = (lng2 - lng1) * Math.PI / 180;
@@ -109,84 +166,60 @@
             return bearing;
         }
 
-        /**
-         * 方位角と仮想距離から、A-Frameのローカル座標(x, y, z)を計算する
-         */
-        function bearingToLocalPosition(bearing, distance) {
-            // 角度をラジアンに変換（Z軸負方向=前方、X軸正方向=右、Y軸正方向=上）
-            const angleRad = (90 - bearing) * Math.PI / 180;
-            
-            const x = distance * Math.cos(angleRad);
-            const z = distance * Math.sin(angleRad);
-            
-            return {
-                x: x,
-                y: 0,
-                z: -z // Z軸の負の方向が前方に来るように
-            };
-        }
-
-
         // =======================================================================
         // 6. 初期化とモデル配置
         // =======================================================================
 
         /**
-         * 現在地を取得し、ARエンティティを配置する
+         * 選択されたターゲットのみを取得し、ARエンティティを配置する
+         * @param {string} targetId - 'fuji' または 'ranjatai'
          */
-        function setupAREntities() {
+        function setupAREntities(targetId) {
             if (!currentLocation) {
                 AR_STATUS.textContent = "ステータス: GPSデータなし。ARエンティティを配置できません。";
                 return;
             }
+            
+            // 選択されたターゲットのみをフィルタリング
+            const selectedTarget = ALL_TARGETS.find(t => t.id === targetId);
 
-            AR_STATUS.textContent = "ステータス: ARオブジェクト配置中...";
+            if (!selectedTarget) {
+                AR_STATUS.textContent = "エラー: 無効なターゲットが選択されました。";
+                return;
+            }
 
-            TARGETS.forEach(target => {
+            AR_STATUS.textContent = `ステータス: ${selectedTarget.name} のARオブジェクト配置中...`;
+
+            // 選択されたターゲットのみの配列を作成
+            const targetsToRender = [selectedTarget];
+
+            targetsToRender.forEach(target => {
                 // 1. 現在地からターゲットへの方位角を計算
                 const bearing = calculateBearing(
                     currentLocation.latitude, currentLocation.longitude,
                     target.lat, target.lng
                 );
-
-                // 2. 方位角と仮想距離からローカル座標を計算
-                let localPos = bearingToLocalPosition(bearing, VIRTUAL_DISTANCE_M);
                 
-                // 3. ローカルX軸に横方向のオフセットを適用（ARカメラの真横にずらす）
-                // ただし、単に localPos.x に足すのではなく、オブジェクトの回転後のローカルX軸にオフセットを適用する必要がある。
-                // 今回は、各エンティティを親要素とし、その子要素にモデルを配置し、親を回転させることで、ローカル座標の概念を単純化します。
-                
-                // AR.jsのLocation-Based ARでは、ターゲットを配置するエンティティ（親）を配置角度に合わせる
+                // 2. 親エンティティを作成し、方位角に応じてY軸回転させる
                 const parentEntity = document.createElement('a-entity');
-                
-                // AR.jsが計算した方位角をそのままY軸の回転として適用する
-                // AR.jsは真北0度をカメラのZ軸負方向（前）に合わせてくれるため、エンティティのY軸回転をbearingに設定
                 parentEntity.setAttribute('rotation', `0 ${bearing} 0`);
-                
-                // 親エンティティをカメラの原点（0, 0, 0）に配置
-                parentEntity.setAttribute('position', '0 0 0');
+                parentEntity.setAttribute('position', '0 0 0'); // カメラの原点
 
 
-                // 4. モデルエンティティ（子）を作成し、親エンティティの子として追加
+                // 3. モデルエンティティ（子）を作成し、親エンティティの子として追加
                 const modelEntity = document.createElement('a-entity');
 
-                // Z軸は仮想距離、X軸はオフセット（Y軸回転後のローカル座標）
+                // Z軸は仮想距離、X軸はオフセット（単独選択のため offsetX は 0）
                 const modelPosString = `${target.offsetX} 0 ${-VIRTUAL_DISTANCE_M}`; 
                 
-                // 3Dモデルを読み込むための設定
                 modelEntity.setAttribute('gltf-model', `url(${target.modelPath})`);
-                
-                // 仮想的なローカル座標を設定（Z軸方向に距離、X軸方向にオフセット）
                 modelEntity.setAttribute('position', modelPosString);
-                
-                // スケールを適用
                 modelEntity.setAttribute('scale', target.scale); 
                 
-                // 親エンティティに追加
                 parentEntity.appendChild(modelEntity);
 
                 
-                // 5. テキストエンティティ（子）を作成し、親エンティティの子として追加
+                // 4. テキストエンティティ（子）を作成
                 const textEntity = document.createElement('a-entity');
                 textEntity.setAttribute('text', {
                     value: target.name + `\nBearing: ${bearing.toFixed(0)}°`,
@@ -197,7 +230,6 @@
                 });
                 // モデルの上、かつオフセット位置に配置
                 textEntity.setAttribute('position', `${target.offsetX} 3 ${-VIRTUAL_DISTANCE_M}`); 
-                // テキストは常にカメラの方を向くように設定（parentEntityは回転しているため、look-atで相対的な調整が必要）
                 textEntity.setAttribute('look-at', '[gps-camera]'); 
 
                 parentEntity.appendChild(textEntity);
@@ -206,19 +238,31 @@
                 AR_SCENE.appendChild(parentEntity);
             });
 
-            AR_STATUS.textContent = "ステータス: AR準備完了";
+            AR_STATUS.textContent = `ステータス: ${selectedTarget.name} AR準備完了`;
         }
 
         // =======================================================================
-        // 7. DeviceOrientation & GPS 許可リクエスト
+        // 7. AR開始フロー制御
         // =======================================================================
 
+        let selectedTargetId = null;
+
         /**
-         * DeviceOrientationイベントの許可をリクエスト（iOS 13+対応）し、
-         * その後、GPSを取得してARを開始する。
+         * メニューから呼び出され、選択されたIDを保持し、許可リクエストを開始する
+         * @param {string} id - 'fuji' or 'ranjatai'
          */
-        function requestDeviceOrientationAndStartAR() {
-            AR_BUTTON.style.display = 'none';
+        function startAR(id) {
+            selectedTargetId = id;
+            requestDeviceOrientationAndGeolocation();
+        }
+
+
+        /**
+         * DeviceOrientationとGPSの許可をリクエストする
+         */
+        function requestDeviceOrientationAndGeolocation() {
+            MENU_SCREEN.style.display = 'none'; // メニューを非表示
+            AR_SCREEN.style.display = 'block';   // AR画面を表示
             AR_STATUS.textContent = "ステータス: 許可リクエスト中...";
 
             const startGeolocation = () => {
@@ -230,7 +274,9 @@
                             longitude: position.coords.longitude
                         };
                         AR_STATUS.textContent = `ステータス: GPS取得完了 (Lat: ${currentLocation.latitude.toFixed(4)}, Lng: ${currentLocation.longitude.toFixed(4)})`;
-                        setupAREntities();
+                        
+                        // GPS取得後、選択されたターゲットのみを配置
+                        setupAREntities(selectedTargetId);
                     },
                     (err) => {
                         AR_STATUS.textContent = `エラー: GPSが取得できませんでした (Code: ${err.code}). 位置情報サービスをONにしてください。`;
@@ -244,7 +290,7 @@
                 );
             };
 
-            // DeviceOrientationEventの許可リクエスト
+            // DeviceOrientationEventの許可リクエスト (iOS 13+対応)
             if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                 DeviceOrientationEvent.requestPermission()
                     .then(permissionState => {
