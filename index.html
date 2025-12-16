@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Location-Based AR Stability & Menu Fix</title>
+    <title>Location-Based AR Final Code</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimal-ui">
     <style>
         /* 全画面コンテナ */
@@ -14,6 +14,7 @@
             height: 100%;
             overflow: hidden;
         }
+        /* ... (前回のスタイル定義は省略) ... */
 
         /* ------------------------------------- */
         /* メニュー画面 (初期表示) */
@@ -64,11 +65,7 @@
             width: 100%;
         }
 
-        /* ------------------------------------- */
         /* AR画面 UI要素 */
-        /* ------------------------------------- */
-
-        /* ステータス表示エリア */
         #ar-status {
             position: fixed;
             top: 10px;
@@ -81,7 +78,6 @@
             z-index: 1000;
         }
 
-        /* ハンバーガーメニューボタン */
         #menu-button {
             position: fixed;
             top: 10px;
@@ -96,7 +92,6 @@
             z-index: 1000;
         }
 
-        /* ターゲット選択オーバーレイ */
         #selection-overlay {
             position: fixed;
             top: 0;
@@ -105,7 +100,6 @@
             height: 100%;
             background-color: rgba(0, 0, 0, 0.9);
             color: white;
-            /* 修正: display: none を指定し、JavaScriptで flex に切り替える */
             display: none; 
             flex-direction: column;
             justify-content: center;
@@ -127,7 +121,6 @@
         .back-button {
              background-color: #f44336 !important;
         }
-
     </style>
     
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
@@ -154,6 +147,9 @@
                 embedded 
                 arjs="sourceType: webcam; debugUIEnabled: false;"
             >
+                <a-light type="ambient" color="#FFF" intensity="0.5"></a-light>
+                <a-light type="directional" color="#FFF" intensity="0.8" position="1 2 -1"></a-light>
+
                 <a-camera gps-camera rotation-reader></a-camera>
             </a-scene>
         </div>
@@ -181,8 +177,8 @@
         const VIRTUAL_DISTANCE_M = 8; 
         let currentLocation = null; 
         let currentTargetId = null; 
+        let isGpsReady = false; // GPSが取得できたかどうかを追跡するフラグ
 
-        // ターゲット座標とモデル情報
         const ALL_TARGETS = [
             {
                 id: 'fuji', 
@@ -230,22 +226,20 @@
          */
         function setupAREntities(targetId) {
             
-            // GPSデータがない場合でも、ダミー位置（現在地をランダムな日本国内に仮定）で続行する
-            const hasLocation = !!currentLocation;
-            if (!hasLocation) {
-                 // デバッグ用: GPSが取得できない場合、東京タワー付近を仮の現在地として設定
-                currentLocation = { latitude: 35.6586, longitude: 139.7454 };
-                AR_STATUS.textContent = "警告: GPSが取得できませんでした。東京を仮の現在地として計算します。";
+            // GPSが取得できていない場合は処理を停止し、警告を表示
+            if (!isGpsReady || !currentLocation) {
+                AR_STATUS.textContent = "エラー: GPSデータがありません。正確な方角配置ができません。";
+                return;
             }
 
             // 既存のARエンティティを全て削除（A-CAMERA以外）
-            const entities = AR_SCENE.querySelectorAll('a-entity:not(a-camera)');
+            const entities = AR_SCENE.querySelectorAll('a-entity:not(a-camera):not(a-light)');
             entities.forEach(entity => AR_SCENE.removeChild(entity));
             
             const selectedTarget = ALL_TARGETS.find(t => t.id === targetId);
             if (!selectedTarget) return;
 
-            AR_STATUS.textContent = `${selectedTarget.name} のARオブジェクト配置中... (GPS: ${hasLocation ? 'ON' : 'OFF'})`;
+            AR_STATUS.textContent = `${selectedTarget.name} のARオブジェクト配置中...`;
 
             const target = selectedTarget;
 
@@ -274,12 +268,8 @@
 
             modelEntity.addEventListener('model-loaded', () => {
                 AR_STATUS.textContent = `${target.name} AR準備完了。`;
-                if (!hasLocation) {
-                     AR_STATUS.textContent += ` (仮位置計算中)`;
-                }
             });
 
-            // モデル読み込みエラー処理（念のため）
             modelEntity.addEventListener('model-error', (e) => {
                 AR_STATUS.textContent = `エラー: ${target.name} のモデル読み込み失敗 (${e.detail.src})`;
                 console.error(`Model load error for ${target.name}:`, e.detail);
@@ -320,23 +310,26 @@
             currentTargetId = id;
 
             const startGeolocation = () => {
-                // GPSの取得を試みるが、失敗しても続行する
+                // GPSの取得を試みる
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
                         currentLocation = {
                             latitude: position.coords.latitude,
                             longitude: position.coords.longitude
                         };
+                        isGpsReady = true; // GPS取得成功
                         AR_STATUS.textContent = `ステータス: GPS取得完了`;
                         setupAREntities(id); // ARオブジェクトを配置
                     },
                     (err) => {
-                        // GPS取得失敗時（ユーザー拒否、タイムアウトなど）
-                        AR_STATUS.textContent = `警告: GPS取得失敗 (Code: ${err.code})。ジャイロのみでARを起動します。`;
-                        currentLocation = null; // 位置情報を使わないことを明示
-                        setupAREntities(id); 
+                        // GPS取得失敗時
+                        AR_STATUS.textContent = `エラー: GPS取得失敗 (Code: ${err.code})。ARを開始できません。`;
+                        isGpsReady = false; // GPS取得失敗
+                        currentLocation = null;
+                        // 失敗した場合、ARシーンを非表示に戻し、ユーザーに許可を促す画面に戻すのが理想だが、
+                        // ここでは、ステータスにエラーを表示したまま、次のアクションを待つ状態にする。
                     },
-                    { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+                    { enableHighAccuracy: true, maximumAge: 0, timeout: 7000 } // タイムアウトを少し長く設定
                 );
             };
 
@@ -349,6 +342,10 @@
                         } else {
                             AR_STATUS.textContent = "エラー: デバイスの向き（ジャイロ）の許可が必要です。";
                         }
+                    })
+                    .catch(e => {
+                        AR_STATUS.textContent = "エラー: DeviceOrientation リクエスト失敗。";
+                        console.error("DO Request Error:", e);
                     });
             } else {
                 startGeolocation(); // ジャイロ許可不要な環境
@@ -359,16 +356,21 @@
          * 2. ハンバーガーメニューからターゲットを切り替える際の処理
          */
         function changeTarget(id) {
+            if (!isGpsReady) {
+                AR_STATUS.textContent = "エラー: GPSがまだ取得できていないため、ターゲットを切り替えられません。";
+                toggleSelectionOverlay();
+                return;
+            }
             if (id === currentTargetId) {
                 AR_STATUS.textContent = "ステータス: 同じターゲットが選択されました。";
-            } else {
-                setupAREntities(id); // ターゲットを再配置 (GPSが取得済みならその位置、なければ仮位置)
+            } else if (currentLocation) {
+                setupAREntities(id); // ターゲットを再配置
             }
             toggleSelectionOverlay(); // オーバーレイを閉じる
         }
 
         /**
-         * 3. ターゲット選択オーバーレイの表示/非表示を切り替える (メニュー動作修正)
+         * 3. ターゲット選択オーバーレイの表示/非表示を切り替える
          */
         function toggleSelectionOverlay() {
             // style.displayの値を直接切り替える (flex <-> none)
@@ -390,9 +392,10 @@
             
             currentLocation = null;
             currentTargetId = null;
+            isGpsReady = false;
 
-            // ARシーン内のモデルをすべて削除 (A-Frameのカメラ以外)
-            const entities = AR_SCENE.querySelectorAll('a-entity:not(a-camera)');
+            // ARシーン内のモデルをすべて削除 (A-Frameのカメラと光源以外)
+            const entities = AR_SCENE.querySelectorAll('a-entity:not(a-camera):not(a-light)');
             entities.forEach(entity => AR_SCENE.removeChild(entity));
         }
     </script>
