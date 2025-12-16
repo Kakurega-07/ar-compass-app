@@ -71,15 +71,16 @@
                 modelPath: './assets/fuji.glb', // 富士山のglbモデルパス
                 lat: 35.3606,
                 lng: 138.7274,
-                scale: '0.5 0.5 0.5' // 富士山: 0.5倍
+                scale: '0.5 0.5 0.5', 
+                offsetX: -1 // << 修正: 左に1メートルずらす
             },
             {
                 name: 'Ranjatai (蘭奢待 - 正倉院)',
                 modelPath: './assets/ra.glb', // 蘭奢待のglbモデルパス
                 lat: 34.6851,
                 lng: 135.8398,
-                // << 修正: 蘭奢待の視認性向上のため、スケールを0.5倍に統一
-                scale: '0.5 0.5 0.5' 
+                scale: '0.5 0.5 0.5',
+                offsetX: 1 // << 修正: 右に1メートルずらす
             }
         ];
 
@@ -113,7 +114,6 @@
          */
         function bearingToLocalPosition(bearing, distance) {
             // 角度をラジアンに変換（Z軸負方向=前方、X軸正方向=右、Y軸正方向=上）
-            // AR.jsのrotation-readerは真北(0度)をZ軸負方向に対応させるため、90-bearingを使用
             const angleRad = (90 - bearing) * Math.PI / 180;
             
             const x = distance * Math.cos(angleRad);
@@ -150,41 +150,60 @@
                 );
 
                 // 2. 方位角と仮想距離からローカル座標を計算
-                const localPos = bearingToLocalPosition(bearing, VIRTUAL_DISTANCE_M);
-                const posString = `${localPos.x.toFixed(2)} ${localPos.y.toFixed(2)} ${localPos.z.toFixed(2)}`;
+                let localPos = bearingToLocalPosition(bearing, VIRTUAL_DISTANCE_M);
                 
-                console.log(`[${target.name}] Bearing: ${bearing.toFixed(2)} deg, Local Pos: ${posString}`);
+                // 3. ローカルX軸に横方向のオフセットを適用（ARカメラの真横にずらす）
+                // ただし、単に localPos.x に足すのではなく、オブジェクトの回転後のローカルX軸にオフセットを適用する必要がある。
+                // 今回は、各エンティティを親要素とし、その子要素にモデルを配置し、親を回転させることで、ローカル座標の概念を単純化します。
+                
+                // AR.jsのLocation-Based ARでは、ターゲットを配置するエンティティ（親）を配置角度に合わせる
+                const parentEntity = document.createElement('a-entity');
+                
+                // AR.jsが計算した方位角をそのままY軸の回転として適用する
+                // AR.jsは真北0度をカメラのZ軸負方向（前）に合わせてくれるため、エンティティのY軸回転をbearingに設定
+                parentEntity.setAttribute('rotation', `0 ${bearing} 0`);
+                
+                // 親エンティティをカメラの原点（0, 0, 0）に配置
+                parentEntity.setAttribute('position', '0 0 0');
 
-                // 3. A-Frameエンティティを作成し、ローカル座標に配置
-                const entity = document.createElement('a-entity');
+
+                // 4. モデルエンティティ（子）を作成し、親エンティティの子として追加
+                const modelEntity = document.createElement('a-entity');
+
+                // Z軸は仮想距離、X軸はオフセット（Y軸回転後のローカル座標）
+                const modelPosString = `${target.offsetX} 0 ${-VIRTUAL_DISTANCE_M}`; 
                 
                 // 3Dモデルを読み込むための設定
-                entity.setAttribute('gltf-model', `url(${target.modelPath})`);
+                modelEntity.setAttribute('gltf-model', `url(${target.modelPath})`);
                 
-                // 仮想的なローカル座標を設定
-                entity.setAttribute('position', posString);
+                // 仮想的なローカル座標を設定（Z軸方向に距離、X軸方向にオフセット）
+                modelEntity.setAttribute('position', modelPosString);
                 
-                // ターゲットごとのスケールを適用
-                entity.setAttribute('scale', target.scale); 
+                // スケールを適用
+                modelEntity.setAttribute('scale', target.scale); 
                 
-                // ターゲット名を見やすいようにタグとして表示
-                entity.setAttribute('look-at', '[gps-camera]'); // カメラの方を向く
+                // 親エンティティに追加
+                parentEntity.appendChild(modelEntity);
+
                 
-                // フォールバック/確認用のテキストエンティティ
+                // 5. テキストエンティティ（子）を作成し、親エンティティの子として追加
                 const textEntity = document.createElement('a-entity');
                 textEntity.setAttribute('text', {
-                    value: target.name + `\nBearing: ${bearing.toFixed(0)}°`, // 方位角も表示
+                    value: target.name + `\nBearing: ${bearing.toFixed(0)}°`,
                     align: 'center',
                     color: '#FFF',
                     wrapCount: 30,
                     width: 4
                 });
-                // << 修正: テキストをモデルより高めに設定 (Y=3)
-                textEntity.setAttribute('position', `0 3 0`); 
-                entity.appendChild(textEntity);
+                // モデルの上、かつオフセット位置に配置
+                textEntity.setAttribute('position', `${target.offsetX} 3 ${-VIRTUAL_DISTANCE_M}`); 
+                // テキストは常にカメラの方を向くように設定（parentEntityは回転しているため、look-atで相対的な調整が必要）
+                textEntity.setAttribute('look-at', '[gps-camera]'); 
+
+                parentEntity.appendChild(textEntity);
 
                 // シーンに追加
-                AR_SCENE.appendChild(entity);
+                AR_SCENE.appendChild(parentEntity);
             });
 
             AR_STATUS.textContent = "ステータス: AR準備完了";
