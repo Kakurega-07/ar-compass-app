@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Location-Based AR Selection Menu & Model Fix</title>
+    <title>Location-Based AR Selection Menu & Scale Reset</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimal-ui">
     <style>
         /* 全画面コンテナ */
@@ -161,7 +161,7 @@
             <h2>新しいターゲットを選択</h2>
             <button onclick="changeTarget('fuji')">🗻 富士山に切り替える</button>
             <button onclick="changeTarget('ranjatai')">🌿 蘭奢待に切り替える</button>
-            <button class="back-button" onclick="showInitialMenu()">メニューに戻る</button>
+            <button class="back-button" onclick="showInitialMenu()">最初のメニューに戻る</button>
             <button onclick="toggleSelectionOverlay()">閉じる</button>
         </div>
     </div>
@@ -181,7 +181,7 @@
         let currentLocation = null; 
         let currentTargetId = null; 
 
-        // ターゲット座標とモデル情報 (単独表示のためoffsetXは0)
+        // ターゲット座標とモデル情報
         const ALL_TARGETS = [
             {
                 id: 'fuji', 
@@ -189,7 +189,7 @@
                 modelPath: './assets/fuji.glb',
                 lat: 35.3606,
                 lng: 138.7274,
-                targetScale: 0.5, // スケール値を数値で定義
+                targetScale: 1.0, // << 修正: スケールを元のサイズ (1.0) に戻す
                 offsetX: 0 
             },
             {
@@ -198,7 +198,7 @@
                 modelPath: './assets/ra.glb',
                 lat: 34.6851,
                 lng: 135.8398,
-                targetScale: 0.5,
+                targetScale: 1.0, // << 修正: スケールを元のサイズ (1.0) に戻す
                 offsetX: 0 
             }
         ];
@@ -221,22 +221,18 @@
 
 
         // =======================================================================
-        // 6. モデル配置ロジック (モデル崩れ修正の core)
+        // 6. モデル配置ロジック
         // =======================================================================
 
         /**
          * 選択されたターゲットのみを取得し、ARエンティティを配置する
-         * @param {string} targetId - 'fuji' または 'ranjatai'
          */
         function setupAREntities(targetId) {
             if (!currentLocation) return;
 
-            // 既存のARエンティティを全て削除（切り替え時のクリーンアップ）
-            while (AR_SCENE.firstChild) {
-                if (AR_SCENE.firstChild.tagName !== 'A-CAMERA') {
-                    AR_SCENE.removeChild(AR_SCENE.firstChild);
-                }
-            }
+            // 既存のARエンティティを全て削除（A-CAMERA以外）
+            const entities = AR_SCENE.querySelectorAll('a-entity:not(a-camera)');
+            entities.forEach(entity => AR_SCENE.removeChild(entity));
             
             const selectedTarget = ALL_TARGETS.find(t => t.id === targetId);
             if (!selectedTarget) return;
@@ -260,21 +256,18 @@
             // 3. モデルエンティティ（子）を作成
             const modelEntity = document.createElement('a-entity');
             
-            // Z軸は仮想距離、X軸はオフセット
             const modelPosString = `${target.offsetX} 0 ${-VIRTUAL_DISTANCE_M}`; 
             modelEntity.setAttribute('position', modelPosString);
 
-            // GLTFモデルを設定。この段階ではスケールを設定せず、読み込み後に設定する
+            // GLTFモデルを設定。
             modelEntity.setAttribute('gltf-model', `url(${target.modelPath})`);
             
-            // **** 【重要】モデル表示崩れ修正ロジック ****
-            // モデルが読み込まれたら（model-loadedイベント）、正しいスケールを適用
+            // モデルが読み込まれたら、正しいスケールを適用
             modelEntity.addEventListener('model-loaded', () => {
                 const s = target.targetScale;
                 modelEntity.setAttribute('scale', `${s} ${s} ${s}`);
                 AR_STATUS.textContent = `ステータス: ${target.name} AR準備完了`;
             });
-            // ********************************************
 
             parentEntity.appendChild(modelEntity);
 
@@ -288,7 +281,6 @@
                 wrapCount: 30,
                 width: 4
             });
-            // モデルの上、かつオフセット位置に配置
             textEntity.setAttribute('position', `${target.offsetX} 3 ${-VIRTUAL_DISTANCE_M}`); 
             textEntity.setAttribute('look-at', '[gps-camera]'); 
 
@@ -352,7 +344,7 @@
             } else if (currentLocation) {
                 setupAREntities(id); // ターゲットを再配置
             } else {
-                // GPSがまだ取得できていない場合の再試行（基本的には initialStartAR で取得済み）
+                // GPSがまだ取得できていない場合の再試行 (通常は不要)
                 initialStartAR(id);
             }
             toggleSelectionOverlay(); // オーバーレイを閉じる
@@ -362,6 +354,7 @@
          * 3. ターゲット選択オーバーレイの表示/非表示を切り替える
          */
         function toggleSelectionOverlay() {
+            // オーバーレイの表示状態を切り替える
             SELECTION_OVERLAY.style.display = SELECTION_OVERLAY.style.display === 'flex' ? 'none' : 'flex';
         }
 
@@ -374,16 +367,12 @@
             SELECTION_OVERLAY.style.display = 'none';
             MENU_SCREEN.style.display = 'flex';
             
-            // GPS情報をリセット (再起動時に再取得するため)
             currentLocation = null;
             currentTargetId = null;
 
             // ARシーン内のモデルをすべて削除 (A-Frameのカメラ以外)
-            while (AR_SCENE.firstChild) {
-                if (AR_SCENE.firstChild.tagName !== 'A-CAMERA') {
-                    AR_SCENE.removeChild(AR_SCENE.firstChild);
-                }
-            }
+            const entities = AR_SCENE.querySelectorAll('a-entity:not(a-camera)');
+            entities.forEach(entity => AR_SCENE.removeChild(entity));
         }
     </script>
 
