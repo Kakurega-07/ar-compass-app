@@ -1,308 +1,373 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Location-Based AR Demo</title>
-  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    
-    #start-button {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      padding: 20px 40px;
-      font-size: 18px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      cursor: pointer;
-      z-index: 9999;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-      transition: all 0.3s ease;
-    }
-    
-    #start-button:hover {
-      transform: translate(-50%, -50%) scale(1.05);
-      box-shadow: 0 15px 40px rgba(0,0,0,0.4);
-    }
-    
-    #info-panel {
-      position: fixed;
-      top: 10px;
-      left: 10px;
-      background: rgba(0, 0, 0, 0.7);
-      color: white;
-      padding: 15px;
-      border-radius: 10px;
-      font-size: 12px;
-      max-width: 300px;
-      z-index: 1000;
-      display: none;
-    }
-    
-    #info-panel.show {
-      display: block;
-    }
-    
-    .info-item {
-      margin: 5px 0;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location Based AR - 富士山と正倉院</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ar.js@3.4.5/aframe/aframe-ar.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #f0f0f0;
+            overflow: hidden;
+        }
+        #scene-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: none;
+            z-index: 100;
+        }
+        .header {
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 20px;
+            border-radius: 0 0 10px 10px;
+            text-align: center;
+            pointer-events: auto;
+        }
+        .header h1 {
+            font-size: 20px;
+            margin-bottom: 5px;
+        }
+        .header p {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            pointer-events: auto;
+            margin-bottom: 30px;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 14px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        #startBtn {
+            background: #4CAF50;
+            color: white;
+        }
+        #startBtn:hover:not(:disabled) {
+            background: #45a049;
+        }
+        #startBtn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        .info-panel {
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            max-width: 280px;
+            pointer-events: auto;
+        }
+        .info-panel div {
+            margin: 5px 0;
+        }
+        .target-label {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 12px;
+            pointer-events: auto;
+            white-space: nowrap;
+        }
+    </style>
 </head>
 <body>
-  <!-- iOS 13+のためのDeviceOrientation許可リクエストボタン -->
-  <button id="start-button">Start AR</button>
-  
-  <!-- デバッグ情報パネル -->
-  <div id="info-panel">
-    <div class="info-item"><strong>現在地:</strong> <span id="current-pos">取得中...</span></div>
-    <div class="info-item"><strong>富士山への方位:</strong> <span id="fuji-bearing">計算中...</span></div>
-    <div class="info-item"><strong>正倉院への方位:</strong> <span id="shosoin-bearing">計算中...</span></div>
-  </div>
+    <div id="scene-container">
+        <a-scene
+            vr-mode-ui="enabled: false"
+            embedded
+            arjs="sourceType: webcam; debugUIEnabled: false; trackingMethod: best;"
+        >
+            <!-- カメラ -->
+            <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-  <!-- A-Frame AR Scene -->
-  <a-scene 
-    vr-mode-ui="enabled: false" 
-    arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;"
-    renderer="logarithmicDepthBuffer: true;"
-    embedded
-    id="ar-scene"
-    style="display: none;">
-    
-    <!-- カメラ設定 -->
-    <a-camera gps-camera rotation-reader look-controls-enabled="false"></a-camera>
-    
-    <!-- 富士山モデル配置用のエンティティ -->
-    <a-entity id="fuji-target">
-      <!-- .glbモデルが利用可能な場合 -->
-      <a-gltf-model src="./assets/fuji.glb" scale="0.5 0.5 0.5" rotation="0 0 0"></a-gltf-model>
-      
-      <!-- フォールバック: 赤いボックス -->
-      <a-box 
-        color="red" 
-        scale="2 2 2" 
-        position="0 0 0"
-        animation="property: rotation; to: 0 360 0; loop: true; dur: 5000; easing: linear">
-        <a-text 
-          value="富士山" 
-          align="center" 
-          color="white" 
-          scale="3 3 3" 
-          position="0 2 0">
-        </a-text>
-      </a-box>
-    </a-entity>
-    
-    <!-- 蘭奢待(正倉院)モデル配置用のエンティティ -->
-    <a-entity id="ranjatai-target">
-      <!-- .glbモデルが利用可能な場合 -->
-      <a-gltf-model src="./assets/ra.glb" scale="0.5 0.5 0.5" rotation="0 0 0"></a-gltf-model>
-      
-      <!-- フォールバック: 青いボックス -->
-      <a-box 
-        color="blue" 
-        scale="2 2 2" 
-        position="0 0 0"
-        animation="property: rotation; to: 0 360 0; loop: true; dur: 5000; easing: linear">
-        <a-text 
-          value="蘭奢待" 
-          align="center" 
-          color="white" 
-          scale="3 3 3" 
-          position="0 2 0">
-        </a-text>
-      </a-box>
-    </a-entity>
-  </a-scene>
+            <!-- 富士山オブジェクト -->
+            <a-entity id="fuji-entity" position="0 0 -5">
+                <a-model src="./assets/fuji.glb"></a-model>
+                <!-- フォールバック: モデルが読み込めない場合の赤いボックス -->
+                <!-- <a-box color="#FF0000" scale="1 1 1"></a-box> -->
+            </a-entity>
 
-  <script>
-    // ==========================================
-    // ターゲット情報の定数定義
-    // （後から変更しやすいように）
-    // ==========================================
-    const TARGETS = {
-      fuji: {
-        name: '富士山',
-        modelPath: './assets/fuji.glb',
-        lat: 35.3606,
-        lng: 138.7274,
-        entityId: 'fuji-target'
-      },
-      ranjatai: {
-        name: '蘭奢待(正倉院)',
-        modelPath: './assets/ra.glb',
-        lat: 34.6851,
-        lng: 135.8398,
-        entityId: 'ranjatai-target'
-      }
-    };
-    
-    // オブジェクトを配置する距離（メートル）
-    const DISPLAY_DISTANCE = 8;
-    
-    // ==========================================
-    // 方位角計算関数（Haversine formula）
-    // ==========================================
-    function calculateBearing(lat1, lng1, lat2, lng2) {
-      const toRad = (deg) => deg * (Math.PI / 180);
-      const toDeg = (rad) => rad * (180 / Math.PI);
-      
-      const dLng = toRad(lng2 - lng1);
-      const lat1Rad = toRad(lat1);
-      const lat2Rad = toRad(lat2);
-      
-      const y = Math.sin(dLng) * Math.cos(lat2Rad);
-      const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
-                Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
-      
-      let bearing = toDeg(Math.atan2(y, x));
-      // 0〜360度に正規化
-      bearing = (bearing + 360) % 360;
-      
-      return bearing;
-    }
-    
-    // ==========================================
-    // 方位角から3D座標への変換
-    // ==========================================
-    function bearingToPosition(bearing, distance) {
-      // A-Frameの座標系: Z軸が-方向(奥)が北
-      // X軸が右が東、左が西
-      // 方位角0度=北、90度=東、180度=南、270度=西
-      
-      const rad = (bearing) * (Math.PI / 180);
-      
-      // X座標: 東西方向（東がプラス）
-      const x = Math.sin(rad) * distance;
-      // Z座標: 南北方向（北がマイナス）
-      const z = -Math.cos(rad) * distance;
-      
-      return { x, z };
-    }
-    
-    // ==========================================
-    // エンティティ配置関数
-    // ==========================================
-    function positionEntity(entityId, bearing) {
-      const entity = document.getElementById(entityId);
-      if (!entity) return;
-      
-      const pos = bearingToPosition(bearing, DISPLAY_DISTANCE);
-      // Y座標は目線の高さに設定（0メートル = カメラ位置）
-      entity.setAttribute('position', `${pos.x} 0 ${pos.z}`);
-      
-      console.log(`${entityId} positioned at bearing ${bearing.toFixed(1)}°, position: ${pos.x.toFixed(2)}, 0, ${pos.z.toFixed(2)}`);
-    }
-    
-    // ==========================================
-    // GPS位置情報取得とAR初期化
-    // ==========================================
-    function initAR() {
-      const infoPanel = document.getElementById('info-panel');
-      const currentPosSpan = document.getElementById('current-pos');
-      const fujiBearingSpan = document.getElementById('fuji-bearing');
-      const shosoninBearingSpan = document.getElementById('shosoin-bearing');
-      
-      if (!navigator.geolocation) {
-        alert('お使いのブラウザは位置情報に対応していません');
-        return;
-      }
-      
-      // 位置情報を取得
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const userLat = position.coords.latitude;
-          const userLng = position.coords.longitude;
-          
-          console.log(`現在地: ${userLat}, ${userLng}`);
-          
-          // デバッグ情報を更新
-          currentPosSpan.textContent = `${userLat.toFixed(4)}, ${userLng.toFixed(4)}`;
-          
-          // 各ターゲットへの方位角を計算
-          const fujiBearing = calculateBearing(userLat, userLng, TARGETS.fuji.lat, TARGETS.fuji.lng);
-          const ranjataiBearing = calculateBearing(userLat, userLng, TARGETS.ranjatai.lat, TARGETS.ranjatai.lng);
-          
-          console.log(`富士山への方位: ${fujiBearing.toFixed(1)}度`);
-          console.log(`正倉院への方位: ${ranjataiBearing.toFixed(1)}度`);
-          
-          // デバッグ情報を更新
-          fujiBearingSpan.textContent = `${fujiBearing.toFixed(1)}°`;
-          shosoninBearingSpan.textContent = `${ranjataiBearing.toFixed(1)}°`;
-          
-          // エンティティを配置
-          positionEntity(TARGETS.fuji.entityId, fujiBearing);
-          positionEntity(TARGETS.ranjatai.entityId, ranjataiBearing);
-          
-          // 情報パネルを表示
-          infoPanel.classList.add('show');
-        },
-        (error) => {
-          console.error('位置情報取得エラー:', error);
-          alert(`位置情報の取得に失敗しました: ${error.message}\n設定で位置情報を許可してください。`);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        }
-      );
-    }
-    
-    // ==========================================
-    // iOS 13+ DeviceOrientation許可リクエスト
-    // ==========================================
-    function requestDeviceOrientation() {
-      if (typeof DeviceOrientationEvent !== 'undefined' && 
-          typeof DeviceOrientationEvent.requestPermission === 'function') {
-        // iOS 13+
-        DeviceOrientationEvent.requestPermission()
-          .then(permissionState => {
-            if (permissionState === 'granted') {
-              startARExperience();
-            } else {
-              alert('デバイスの向きへのアクセスが拒否されました');
+            <!-- 正倉院（蘭奢待）オブジェクト -->
+            <a-entity id="ra-entity" position="0 0 -5">
+                <a-model src="./assets/ra.glb"></a-model>
+                <!-- フォールバック: モデルが読み込めない場合の青いボックス -->
+                <!-- <a-box color="#0000FF" scale="0.5 0.5 0.5"></a-box> -->
+            </a-entity>
+
+            <!-- ライト -->
+            <a-light type="ambient" intensity="1"></a-light>
+            <a-light type="directional" intensity="0.5" position="5 10 7"></a-light>
+        </a-scene>
+
+        <!-- UI オーバーレイ -->
+        <div id="ui-overlay">
+            <div class="header">
+                <h1>📍 Location Based AR</h1>
+                <p>富士山と正倉院を探してみよう</p>
+            </div>
+            
+            <div class="controls">
+                <button id="startBtn">🚀 AR を開始</button>
+                <button id="permissionBtn" style="background: #2196F3;">📱 位置情報・デバイス向き許可</button>
+            </div>
+
+            <div class="info-panel">
+                <div><strong>📡 GPS情報</strong></div>
+                <div id="gps-status">待機中...</div>
+                <div id="user-lat">緯度: ---</div>
+                <div id="user-lng">経度: ---</div>
+                <div style="margin-top: 10px; border-top: 1px solid #00ff00; padding-top: 10px;">
+                    <strong>🎯 ターゲット方位角</strong>
+                </div>
+                <div id="fuji-bearing">富士山: 計算中...</div>
+                <div id="ra-bearing">正倉院: 計算中...</div>
+                <div id="device-heading">デバイス方角: 計算中...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ========================================
+        // 定数定義：ターゲット情報
+        // ========================================
+        const TARGETS = {
+            fuji: {
+                name: '富士山',
+                modelPath: './assets/fuji.glb',
+                entityId: 'fuji-entity',
+                lat: 35.3606,
+                lng: 138.7274,
+                distance: 5 // ユーザーから見える距離（メートル）
+            },
+            ra: {
+                name: '正倉院（蘭奢待）',
+                modelPath: './assets/ra.glb',
+                entityId: 'ra-entity',
+                lat: 34.6851,
+                lng: 135.8398,
+                distance: 5 // ユーザーから見える距離（メートル）
             }
-          })
-          .catch(console.error);
-      } else {
-        // iOS以外または古いバージョン
-        startARExperience();
-      }
-    }
-    
-    // ==========================================
-    // AR体験開始
-    // ==========================================
-    function startARExperience() {
-      const startButton = document.getElementById('start-button');
-      const scene = document.getElementById('ar-scene');
-      
-      // ボタンを非表示
-      startButton.style.display = 'none';
-      
-      // シーンを表示
-      scene.style.display = 'block';
-      
-      // AR初期化
-      initAR();
-    }
-    
-    // ==========================================
-    // イベントリスナー
-    // ==========================================
-    document.getElementById('start-button').addEventListener('click', () => {
-      requestDeviceOrientation();
-    });
-  </script>
+        };
+
+        // ========================================
+        // グローバル変数
+        // ========================================
+        let userLocation = null;
+        let deviceHeading = 0;
+        let arStarted = false;
+
+        // ========================================
+        // Haversine公式：2つの座標間の距離を計算（メートル）
+        // ========================================
+        function haversineDistance(lat1, lng1, lat2, lng2) {
+            const R = 6371000; // 地球の半径（メートル）
+            const toRad = Math.PI / 180;
+            
+            const dLat = (lat2 - lat1) * toRad;
+            const dLng = (lng2 - lng1) * toRad;
+            
+            const a = Math.sin(dLat / 2) ** 2 +
+                      Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLng / 2) ** 2;
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            
+            return R * c;
+        }
+
+        // ========================================
+        // 方位角計算：現在地からターゲットへの方向を計算（0〜360度）
+        // North = 0°, East = 90°, South = 180°, West = 270°
+        // ========================================
+        function calculateBearing(lat1, lng1, lat2, lng2) {
+            const toRad = Math.PI / 180;
+            const dLng = (lng2 - lng1) * toRad;
+            
+            const y = Math.sin(dLng) * Math.cos(lat2 * toRad);
+            const x = Math.cos(lat1 * toRad) * Math.sin(lat2 * toRad) -
+                      Math.sin(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.cos(dLng);
+            
+            let bearing = Math.atan2(y, x) * (180 / Math.PI);
+            bearing = (bearing + 360) % 360; // 0〜360に正規化
+            
+            return bearing;
+        }
+
+        // ========================================
+        // 方位角に基づいてローカル座標を計算
+        // ユーザー（カメラ）を中心に、指定方向にオブジェクトを配置
+        // ========================================
+        function getLocalPositionFromBearing(bearing, distance) {
+            const toRad = Math.PI / 180;
+            // A-Frameの座標系：-Z が前方、+Y が上、+X が右
+            // 方位角：North(0°) = -Z方向
+            const x = distance * Math.sin(bearing * toRad);
+            const z = -distance * Math.cos(bearing * toRad);
+            const y = 0; // 高さはユーザーと同じレベル
+            
+            return { x, y, z };
+        }
+
+        // ========================================
+        // UI更新：GPS情報とベアリング情報を表示
+        // ========================================
+        function updateUI() {
+            if (!userLocation) return;
+
+            const latEl = document.getElementById('user-lat');
+            const lngEl = document.getElementById('user-lng');
+            const headingEl = document.getElementById('device-heading');
+
+            latEl.textContent = `緯度: ${userLocation.latitude.toFixed(6)}`;
+            lngEl.textContent = `経度: ${userLocation.longitude.toFixed(6)}`;
+            headingEl.textContent = `デバイス方角: ${deviceHeading.toFixed(1)}°`;
+
+            // 各ターゲットのベアリングを計算して表示
+            Object.entries(TARGETS).forEach(([key, target]) => {
+                const bearing = calculateBearing(
+                    userLocation.latitude,
+                    userLocation.longitude,
+                    target.lat,
+                    target.lng
+                );
+                const bearingEl = document.getElementById(`${key}-bearing`);
+                if (bearingEl) {
+                    bearingEl.textContent = `${target.name}: ${bearing.toFixed(1)}°`;
+                }
+
+                // 方位角に基づいてエンティティ位置を更新
+                const pos = getLocalPositionFromBearing(bearing, target.distance);
+                const entity = document.getElementById(target.entityId);
+                if (entity) {
+                    entity.setAttribute('position', `${pos.x.toFixed(2)} ${pos.y.toFixed(2)} ${pos.z.toFixed(2)}`);
+                }
+            });
+        }
+
+        // ========================================
+        // GPS取得：位置情報を監視
+        // ========================================
+        function startGPS() {
+            if (!navigator.geolocation) {
+                alert('お使いのブラウザは位置情報に対応していません');
+                return;
+            }
+
+            document.getElementById('gps-status').textContent = '位置情報取得中...';
+
+            const options = {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            };
+
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    userLocation = {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        accuracy: position.coords.accuracy
+                    };
+                    document.getElementById('gps-status').textContent = `✓ 取得済み（精度: ±${position.coords.accuracy.toFixed(0)}m）`;
+                    updateUI();
+                },
+                (error) => {
+                    document.getElementById('gps-status').textContent = `✗ エラー: ${error.message}`;
+                    console.error('位置情報エラー:', error);
+                },
+                options
+            );
+        }
+
+        // ========================================
+        // デバイス向き取得：DeviceOrientation イベント
+        // iOS 13+では事前許可が必要
+        // ========================================
+        function startDeviceOrientation() {
+            if (!window.DeviceOrientationEvent) {
+                alert('お使いのブラウザはデバイス向きに対応していません');
+                return;
+            }
+
+            // iOS 13+：許可リクエスト
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then((permission) => {
+                        if (permission === 'granted') {
+                            window.addEventListener('deviceorientation', handleOrientation);
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                // その他のブラウザ
+                window.addEventListener('deviceorientation', handleOrientation);
+            }
+        }
+
+        function handleOrientation(event) {
+            // alpha: Z軸周り（0〜360）= コンパス方向
+            deviceHeading = event.alpha || 0;
+            updateUI();
+        }
+
+        // ========================================
+        // イベントリスナー
+        // ========================================
+        document.getElementById('startBtn').addEventListener('click', () => {
+            if (!userLocation) {
+                alert('位置情報をまず取得してください');
+                return;
+            }
+            arStarted = true;
+            document.getElementById('startBtn').textContent = '✓ AR 実行中';
+            document.getElementById('startBtn').disabled = true;
+        });
+
+        document.getElementById('permissionBtn').addEventListener('click', () => {
+            startGPS();
+            startDeviceOrientation();
+        });
+
+        // ========================================
+        // 初期化
+        // ========================================
+        window.addEventListener('load', () => {
+            console.log('AR アプリケーション起動');
+        });
+    </script>
 </body>
 </html>
