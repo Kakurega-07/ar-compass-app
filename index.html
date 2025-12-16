@@ -37,6 +37,33 @@
     
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+    
+    <script>
+        AFRAME.registerComponent('gltf-fallback', {
+            init: function () {
+                const el = this.el;
+                const targetName = el.dataset.targetName || 'Unknown';
+
+                // モデルがロードされた際のイベント
+                el.addEventListener('model-loaded', function () {
+                    console.log(`[${targetName}] GLTFモデルが正常にロードされました。`);
+                });
+
+                // モデルのロードに失敗した際のイベント
+                el.addEventListener('model-error', function (evt) {
+                    console.error(`[${targetName}] GLTFモデルのロードに失敗しました。パスを確認してください: ${evt.detail.src}`);
+                    // モデルを削除し、代わりに赤いボックスを配置
+                    el.removeAttribute('gltf-model');
+                    
+                    const fallbackBox = document.createElement('a-box');
+                    fallbackBox.setAttribute('color', 'red');
+                    fallbackBox.setAttribute('scale', '0.5 0.5 0.5');
+                    fallbackBox.setAttribute('position', '0 0.25 0'); // 地面から少し持ち上げる
+                    el.appendChild(fallbackBox);
+                });
+            }
+        });
+    </script>
 </head>
 <body>
 
@@ -62,7 +89,7 @@
         const AR_BUTTON = document.getElementById('ar-button');
 
         // 3Dモデルを配置する、カメラからの仮想的な距離（メートル）
-        const VIRTUAL_DISTANCE_M = 20; 
+        const VIRTUAL_DISTANCE_M = 8; 
 
         // ターゲット座標とモデル情報
         const TARGETS = [
@@ -71,12 +98,14 @@
                 modelPath: './assets/fuji.glb', // 富士山のglbモデルパス
                 lat: 35.3606,
                 lng: 138.7274,
+                scale: '0.5 0.5 0.5' 
             },
             {
                 name: 'Ranjatai (蘭奢待 - 正倉院)',
-                modelPath: './assets/ra.glb', // 蘭奢待のglbモデルパス
+                modelPath: './assets/ra.glb', // 蘭奢待のglbモデルパス (パスを確認してください)
                 lat: 34.6851,
                 lng: 135.8398,
+                scale: '0.5 0.5 0.5' // << 修正: スケールを0.5倍に統一して視認性を高める
             }
         ];
 
@@ -88,9 +117,6 @@
 
         /**
          * 2つのGPS座標から方位角（Bearing）を計算する（Haversineの派生）
-         * @param {object} lat1, lng1 - 現在地
-         * @param {object} lat2, lng2 - ターゲット地点
-         * @returns {number} 0〜360度の角度（真北が0度、東が90度）
          */
         function calculateBearing(lat1, lng1, lat2, lng2) {
             // 度をラジアンに変換
@@ -102,7 +128,6 @@
             const x = Math.cos(R_lat1) * Math.sin(R_lat2) -
                       Math.sin(R_lat1) * Math.cos(R_lat2) * Math.cos(R_dLng);
 
-            // 角度を計算し、-180〜180度から0〜360度に変換
             let bearing = Math.atan2(y, x) * 180 / Math.PI;
             bearing = (bearing + 360) % 360;
 
@@ -111,24 +136,13 @@
 
         /**
          * 方位角と仮想距離から、A-Frameのローカル座標(x, y, z)を計算する
-         * AR.jsのカメラが向いている方向（Z軸）に合わせるため、90度オフセットする。
-         * Z軸は負の方向が「前方」です。
-         * @param {number} bearing - 真北からの角度 (0〜360度)
-         * @param {number} distance - カメラからの距離 (メートル)
-         * @returns {object} {x, y, z}
          */
         function bearingToLocalPosition(bearing, distance) {
-            // A-Frameでは、北を0度（Y軸方向）として扱いたいが、ここでは水平面（X-Z平面）で回転させる
-            // 0度（北）をZ軸の負の方向（前方）に配置するため、bearingから90度を引く。
-            // また、AR.jsでは真北(0度)がZ軸負方向に来るようになっているので、通常は以下の計算でOK。
             const angleRad = (90 - bearing) * Math.PI / 180;
             
-            // X軸（東西）：sin(角度) * 距離
             const x = distance * Math.cos(angleRad);
-            // Z軸（南北）：cos(角度) * 距離。A-FrameのZ軸は負方向が「前方」
             const z = distance * Math.sin(angleRad);
             
-            // Y軸は高さなので0
             return {
                 x: x,
                 y: 0,
@@ -168,19 +182,20 @@
                 // 3. A-Frameエンティティを作成し、ローカル座標に配置
                 const entity = document.createElement('a-entity');
                 
+                // フォールバック処理用のカスタムコンポーネントを追加
+                entity.setAttribute('gltf-fallback', '');
+                entity.dataset.targetName = target.name;
+                
                 // 3Dモデルを読み込むための設定
                 entity.setAttribute('gltf-model', `url(${target.modelPath})`);
                 
                 // 仮想的なローカル座標を設定
                 entity.setAttribute('position', posString);
                 
-                // モデルのサイズ調整（必要に応じて）
-                entity.setAttribute('scale', '1 1 1'); // 例: モデルサイズを2倍にする
+                // ターゲットごとのスケールを適用
+                entity.setAttribute('scale', target.scale); 
                 
                 // ターゲット名を見やすいようにタグとして表示
-                entity.setAttribute('look-at', '[gps-camera]'); // カメラの方を向く
-                
-                // フォールバック/確認用のテキストエンティティ
                 const textEntity = document.createElement('a-entity');
                 textEntity.setAttribute('text', {
                     value: target.name,
@@ -189,18 +204,9 @@
                     wrapCount: 30,
                     width: 4
                 });
-                textEntity.setAttribute('position', `0 2 0`); // モデルの上に配置
+                textEntity.setAttribute('position', `0 2.5 0`); // モデルの上に配置
+                textEntity.setAttribute('look-at', '[gps-camera]'); // カメラの方を向く
                 entity.appendChild(textEntity);
-
-
-                // モデルが読み込めない場合のフォールバックとして赤いボックスを追加（コメントアウト）
-                /*
-                const fallbackBox = document.createElement('a-box');
-                fallbackBox.setAttribute('color', 'red');
-                fallbackBox.setAttribute('scale', '1 1 1');
-                fallbackBox.setAttribute('position', '0 0.5 0'); // モデルの中央に配置
-                entity.appendChild(fallbackBox);
-                */
 
                 // シーンに追加
                 AR_SCENE.appendChild(entity);
