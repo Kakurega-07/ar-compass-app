@@ -233,30 +233,38 @@
     <a-scene
         vr-mode-ui="enabled: false"
         embedded
-        arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;">
+        arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: true;">
 
         <a-camera gps-camera rotation-reader></a-camera>
 
         <a-entity
-            show-on-bearing="latitude: 35.3606; longitude: 138.7274; tolerance: 20; distance: 30"
-            gltf-model="url(./assets/fuji.glb)"
+            direction-target="latitude: 35.3606; longitude: 138.7274; distance: 30"
+            gltf-model="url(http://localhost:8000/assets/fuji.glb)"
             scale="5 5 5"
             look-at="[gps-camera]"
-            position="0 2 0"
-            visible="false">
+            position="0 2 0">
         </a-entity>
         <a-entity
-            show-on-bearing="latitude: 34.6851; longitude: 135.8398; tolerance: 20; distance: 30"
-            gltf-model="url(./assets/ra.glb)"
+            direction-target="latitude: 34.6851; longitude: 135.8398; distance: 30"
+            gltf-model="url(http://localhost:8000/assets/ra.glb)"
             scale="5 5 5"
             look-at="[gps-camera]"
-            position="0 1 0"
-            visible="false">
+            position="0 1 0">
+        </a-entity>
+
+        <!-- テスト用: GLBの代わりにシンプルな緑のボックス -->
+        <a-entity direction-target="latitude: 35.3606; longitude: 138.7274; distance: 15">
+            <a-box color="green" depth="3" height="3" width="3" position="0 1.5 0"></a-box>
         </a-entity>
 
         <!-- デバッグ用: GPSイベントで配置される赤いボックス（簡易確認用） -->
-        <a-entity id="debug-box" show-on-bearing="latitude: 35.3606; longitude: 138.7274; tolerance: 30; distance: 10" visible="false">
+        <a-entity id="debug-box" direction-target="latitude: 35.3606; longitude: 138.7274; distance: 10">
             <a-box color="red" depth="1" height="1" width="1" position="0 0.5 0"></a-box>
+        </a-entity>
+
+        <!-- テスト用: シンプルな青いボックス（GLB読み込み確認用） -->
+        <a-entity direction-target="latitude: 35.3606; longitude: 138.7274; distance: 20">
+            <a-box color="blue" depth="2" height="2" width="2" position="0 1 0"></a-box>
         </a-entity>
 
         </a-scene>
