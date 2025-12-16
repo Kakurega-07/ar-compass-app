@@ -1,425 +1,270 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Location Based AR - 富士山と正倉院</title>
-  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    #start-button {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 9999;
-      padding: 20px 40px;
-      font-size: 20px;
-      font-weight: bold;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      cursor: pointer;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-      transition: all 0.3s ease;
-    }
-    #start-button:hover {
-      transform: translate(-50%, -50%) scale(1.05);
-      box-shadow: 0 15px 40px rgba(0,0,0,0.4);
-    }
-    #info-panel {
-      position: fixed;
-      top: 10px;
-      left: 10px;
-      background: rgba(0, 0, 0, 0.85);
-      color: white;
-      padding: 15px;
-      border-radius: 10px;
-      font-size: 11px;
-      max-width: 320px;
-      z-index: 1000;
-      display: none;
-      max-height: 80vh;
-      overflow-y: auto;
-    }
-    #loading {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      color: white;
-      font-size: 18px;
-      background: rgba(0, 0, 0, 0.8);
-      padding: 20px;
-      border-radius: 10px;
-      display: none;
-      z-index: 9998;
-    }
-    .status-ok { color: #4ade80; }
-    .status-error { color: #f87171; }
-    .status-warning { color: #fbbf24; }
-  </style>
+    <meta charset="UTF-8">
+    <title>Location-Based AR with A-Frame & AR.js</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimal-ui">
+    <style>
+        /* 許可ボタンを中央に配置するための基本的なスタイル */
+        #ar-button {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            font-size: 1.2em;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            cursor: pointer;
+            display: block; /* 初期表示 */
+        }
+        #ar-status {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            z-index: 1000;
+        }
+    </style>
+    
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
 </head>
 <body>
-  <!-- スタートボタン -->
-  <button id="start-button">AR を開始</button>
-  
-  <!-- ローディング表示 -->
-  <div id="loading">位置情報を取得中...</div>
-  
-  <!-- 情報パネル（デバッグ情報含む） -->
-  <div id="info-panel">
-    <div id="location-info">位置情報取得中...</div>
-    <div id="bearing-info"></div>
-    <hr style="margin: 10px 0; border-color: rgba(255,255,255,0.3);">
-    <div id="debug-info"><strong>デバッグ情報:</strong><br></div>
-  </div>
 
-  <!-- A-Frame Scene -->
-  <a-scene
-    vr-mode-ui="enabled: false"
-    arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;"
-    renderer="logarithmicDepthBuffer: true; precision: medium;"
-    embedded
-    gesture-detector
-    id="scene"
-    style="display: none;">
-    
-    <!-- カメラ -->
-    <a-camera gps-camera rotation-reader look-controls-enabled="false"></a-camera>
-    
-    <!-- 富士山のモデル（方角ベース配置） -->
-    <a-entity id="fuji-container" visible="true">
-      <!-- フォールバック用ボックス（常に表示してテスト） -->
-      <a-box 
-        id="fuji-box"
-        color="#ff0000" 
-        position="0 0 0" 
-        scale="0.5 0.5 0.5"
-        material="opacity: 0.8">
-      </a-box>
-      <!-- 実際のモデル -->
-      <a-entity
-        id="fuji-model"
-        gltf-model="./assets/fuji.glb"
-        scale="2 2 2"
-        visible="false"
-        animation="property: rotation; to: 0 360 0; loop: true; dur: 20000; easing: linear">
-      </a-entity>
-    </a-entity>
-    
-    <!-- 正倉院（蘭奢待）のモデル（方角ベース配置） -->
-    <a-entity id="shosoin-container" visible="true">
-      <!-- フォールバック用ボックス（常に表示してテスト） -->
-      <a-box 
-        id="shosoin-box"
-        color="#0000ff" 
-        position="0 0 0" 
-        scale="0.5 0.5 0.5"
-        material="opacity: 0.8">
-      </a-box>
-      <!-- 実際のモデル -->
-      <a-entity
-        id="shosoin-model"
-        gltf-model="./assets/ra.glb"
-        scale="1.5 1.5 1.5"
-        visible="false"
-        animation="property: position; to: 0 0.3 0; dur: 2000; easing: easeInOutSine; loop: true; dir: alternate">
-      </a-entity>
-    </a-entity>
-    
-    <!-- 環境光 -->
-    <a-light type="ambient" color="#BBB"></a-light>
-    <a-light type="directional" color="#FFF" intensity="0.6" position="-0.5 1 1"></a-light>
-    
-    <!-- デバッグ用：カメラ位置の基準ボックス -->
-    <a-box color="#00ff00" position="0 1.6 -2" scale="0.2 0.2 0.2"></a-box>
-  </a-scene>
+    <div id="ar-status">ステータス: 初期化中...</div>
 
-  <script>
-    // ========================================
-    // 定数定義：ターゲット情報
-    // ========================================
-    const TARGETS = {
-      fuji: {
-        name: '富士山',
-        modelPath: './assets/fuji.glb',
-        lat: 35.3606,
-        lng: 138.7274,
-        containerId: 'fuji-container',
-        modelId: 'fuji-model',
-        boxId: 'fuji-box',
-        distance: 5  // カメラからの表示距離（メートル）
-      },
-      shosoin: {
-        name: '正倉院（蘭奢待）',
-        modelPath: './assets/ra.glb',
-        lat: 34.6851,
-        lng: 135.8398,
-        containerId: 'shosoin-container',
-        modelId: 'shosoin-model',
-        boxId: 'shosoin-box',
-        distance: 7  // カメラからの表示距離（メートル）
-      }
-    };
+    <button id="ar-button" onclick="requestDeviceOrientationAndStartAR()">Start AR & Location</button>
 
-    // デバッグログを蓄積
-    const debugLogs = [];
-    function addDebugLog(message, type = 'info') {
-      const timestamp = new Date().toLocaleTimeString();
-      debugLogs.push({ timestamp, message, type });
-      updateDebugPanel();
-      console.log(`[${timestamp}] ${message}`);
-    }
+    <a-scene 
+        vr-mode-ui="enabled: false" 
+        embedded 
+        arjs="sourceType: webcam; debugUIEnabled: false;"
+    >
+        <a-camera gps-camera rotation-reader></a-camera>
 
-    function updateDebugPanel() {
-      const debugInfo = document.getElementById('debug-info');
-      let html = '<strong>デバッグ情報:</strong><br>';
-      debugLogs.slice(-10).forEach(log => {
-        const className = log.type === 'error' ? 'status-error' : 
-                         log.type === 'warning' ? 'status-warning' : 
-                         log.type === 'success' ? 'status-ok' : '';
-        html += `<span class="${className}">[${log.timestamp}] ${log.message}</span><br>`;
-      });
-      debugInfo.innerHTML = html;
-    }
+        </a-scene>
 
-    // ========================================
-    // ユーティリティ関数：方位角計算
-    // ========================================
-    function calculateBearing(lat1, lng1, lat2, lng2) {
-      const φ1 = lat1 * Math.PI / 180;
-      const φ2 = lat2 * Math.PI / 180;
-      const Δλ = (lng2 - lng1) * Math.PI / 180;
+    <script>
+        // =======================================================================
+        // 4. 定数定義
+        // =======================================================================
+        const AR_SCENE = document.querySelector('a-scene');
+        const AR_STATUS = document.getElementById('ar-status');
+        const AR_BUTTON = document.getElementById('ar-button');
 
-      const y = Math.sin(Δλ) * Math.cos(φ2);
-      const x = Math.cos(φ1) * Math.sin(φ2) -
-                Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-      
-      let bearing = Math.atan2(y, x) * 180 / Math.PI;
-      bearing = (bearing + 360) % 360;
-      
-      return bearing;
-    }
+        // 3Dモデルを配置する、カメラからの仮想的な距離（メートル）
+        const VIRTUAL_DISTANCE_M = 8; 
 
-    function bearingToPosition(bearing, distance) {
-      const radians = (90 - bearing) * Math.PI / 180;
-      const x = distance * Math.cos(radians);
-      const z = -distance * Math.sin(radians);
-      return { x, z };
-    }
+        // ターゲット座標とモデル情報
+        const TARGETS = [
+            {
+                name: 'Mt. Fuji (富士山)',
+                modelPath: './assets/fuji.glb', // 富士山のglbモデルパス
+                lat: 35.3606,
+                lng: 138.7274,
+            },
+            {
+                name: 'Ranjatai (蘭奢待 - 正倉院)',
+                modelPath: './assets/ra.glb', // 蘭奢待のglbモデルパス
+                lat: 34.6851,
+                lng: 135.8398,
+            }
+        ];
 
-    // ========================================
-    // メイン処理
-    // ========================================
-    let userLocation = null;
-    const startButton = document.getElementById('start-button');
-    const loading = document.getElementById('loading');
-    const infoPanel = document.getElementById('info-panel');
-    const locationInfo = document.getElementById('location-info');
-    const bearingInfo = document.getElementById('bearing-info');
-    const scene = document.getElementById('scene');
+        let currentLocation = null; // ユーザーの現在地
 
-    async function initializeAR() {
-      try {
-        addDebugLog('AR初期化開始', 'info');
+        // =======================================================================
+        // 5. 座標計算ロジック
+        // =======================================================================
 
-        // iOS 13+のDeviceOrientationEvent許可リクエスト
-        if (typeof DeviceOrientationEvent !== 'undefined' && 
-            typeof DeviceOrientationEvent.requestPermission === 'function') {
-          addDebugLog('iOS: DeviceOrientation許可要求', 'info');
-          const permission = await DeviceOrientationEvent.requestPermission();
-          if (permission !== 'granted') {
-            addDebugLog('DeviceOrientation許可が拒否されました', 'error');
-            alert('デバイスの向き情報へのアクセスが拒否されました。');
-            return;
-          }
-          addDebugLog('DeviceOrientation許可が承認されました', 'success');
+        /**
+         * 2つのGPS座標から方位角（Bearing）を計算する（Haversineの派生）
+         * @param {object} lat1, lng1 - 現在地
+         * @param {object} lat2, lng2 - ターゲット地点
+         * @returns {number} 0〜360度の角度（真北が0度、東が90度）
+         */
+        function calculateBearing(lat1, lng1, lat2, lng2) {
+            // 度をラジアンに変換
+            const R_lat1 = lat1 * Math.PI / 180;
+            const R_lat2 = lat2 * Math.PI / 180;
+            const R_dLng = (lng2 - lng1) * Math.PI / 180;
+
+            const y = Math.sin(R_dLng) * Math.cos(R_lat2);
+            const x = Math.cos(R_lat1) * Math.sin(R_lat2) -
+                      Math.sin(R_lat1) * Math.cos(R_lat2) * Math.cos(R_dLng);
+
+            // 角度を計算し、-180〜180度から0〜360度に変換
+            let bearing = Math.atan2(y, x) * 180 / Math.PI;
+            bearing = (bearing + 360) % 360;
+
+            return bearing;
         }
 
-        startButton.style.display = 'none';
-        loading.style.display = 'block';
-
-        if (!navigator.geolocation) {
-          throw new Error('位置情報がサポートされていません');
+        /**
+         * 方位角と仮想距離から、A-Frameのローカル座標(x, y, z)を計算する
+         * AR.jsのカメラが向いている方向（Z軸）に合わせるため、90度オフセットする。
+         * Z軸は負の方向が「前方」です。
+         * @param {number} bearing - 真北からの角度 (0〜360度)
+         * @param {number} distance - カメラからの距離 (メートル)
+         * @returns {object} {x, y, z}
+         */
+        function bearingToLocalPosition(bearing, distance) {
+            // A-Frameでは、北を0度（Y軸方向）として扱いたいが、ここでは水平面（X-Z平面）で回転させる
+            // 0度（北）をZ軸の負の方向（前方）に配置するため、bearingから90度を引く。
+            // また、AR.jsでは真北(0度)がZ軸負方向に来るようになっているので、通常は以下の計算でOK。
+            const angleRad = (90 - bearing) * Math.PI / 180;
+            
+            // X軸（東西）：sin(角度) * 距離
+            const x = distance * Math.cos(angleRad);
+            // Z軸（南北）：cos(角度) * 距離。A-FrameのZ軸は負方向が「前方」
+            const z = distance * Math.sin(angleRad);
+            
+            // Y軸は高さなので0
+            return {
+                x: x,
+                y: 0,
+                z: -z // Z軸の負の方向が前方に来るように
+            };
         }
 
-        addDebugLog('位置情報取得中...', 'info');
 
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            userLocation = {
-              lat: position.coords.latitude,
-              lng: position.coords.longitude
+        // =======================================================================
+        // 6. 初期化とモデル配置
+        // =======================================================================
+
+        /**
+         * 現在地を取得し、ARエンティティを配置する
+         */
+        function setupAREntities() {
+            if (!currentLocation) {
+                AR_STATUS.textContent = "ステータス: GPSデータなし。ARエンティティを配置できません。";
+                return;
+            }
+
+            AR_STATUS.textContent = "ステータス: ARオブジェクト配置中...";
+
+            TARGETS.forEach(target => {
+                // 1. 現在地からターゲットへの方位角を計算
+                const bearing = calculateBearing(
+                    currentLocation.latitude, currentLocation.longitude,
+                    target.lat, target.lng
+                );
+
+                // 2. 方位角と仮想距離からローカル座標を計算
+                const localPos = bearingToLocalPosition(bearing, VIRTUAL_DISTANCE_M);
+                const posString = `${localPos.x.toFixed(2)} ${localPos.y.toFixed(2)} ${localPos.z.toFixed(2)}`;
+                
+                console.log(`[${target.name}] Bearing: ${bearing.toFixed(2)} deg, Local Pos: ${posString}`);
+
+                // 3. A-Frameエンティティを作成し、ローカル座標に配置
+                const entity = document.createElement('a-entity');
+                
+                // 3Dモデルを読み込むための設定
+                entity.setAttribute('gltf-model', `url(${target.modelPath})`);
+                
+                // 仮想的なローカル座標を設定
+                entity.setAttribute('position', posString);
+                
+                // モデルのサイズ調整（必要に応じて）
+                entity.setAttribute('scale', '2 2 2'); // 例: モデルサイズを2倍にする
+                
+                // ターゲット名を見やすいようにタグとして表示
+                entity.setAttribute('look-at', '[gps-camera]'); // カメラの方を向く
+                
+                // フォールバック/確認用のテキストエンティティ
+                const textEntity = document.createElement('a-entity');
+                textEntity.setAttribute('text', {
+                    value: target.name,
+                    align: 'center',
+                    color: '#FFF',
+                    wrapCount: 30,
+                    width: 4
+                });
+                textEntity.setAttribute('position', `0 2 0`); // モデルの上に配置
+                entity.appendChild(textEntity);
+
+
+                // モデルが読み込めない場合のフォールバックとして赤いボックスを追加（コメントアウト）
+                /*
+                const fallbackBox = document.createElement('a-box');
+                fallbackBox.setAttribute('color', 'red');
+                fallbackBox.setAttribute('scale', '1 1 1');
+                fallbackBox.setAttribute('position', '0 0.5 0'); // モデルの中央に配置
+                entity.appendChild(fallbackBox);
+                */
+
+                // シーンに追加
+                AR_SCENE.appendChild(entity);
+            });
+
+            AR_STATUS.textContent = "ステータス: AR準備完了";
+        }
+
+        // =======================================================================
+        // 7. DeviceOrientation & GPS 許可リクエスト
+        // =======================================================================
+
+        /**
+         * DeviceOrientationイベントの許可をリクエスト（iOS 13+対応）し、
+         * その後、GPSを取得してARを開始する。
+         */
+        function requestDeviceOrientationAndStartAR() {
+            AR_BUTTON.style.display = 'none';
+            AR_STATUS.textContent = "ステータス: 許可リクエスト中...";
+
+            const startGeolocation = () => {
+                // GPSの取得
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        currentLocation = {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude
+                        };
+                        AR_STATUS.textContent = `ステータス: GPS取得完了 (Lat: ${currentLocation.latitude.toFixed(4)}, Lng: ${currentLocation.longitude.toFixed(4)})`;
+                        setupAREntities();
+                    },
+                    (err) => {
+                        AR_STATUS.textContent = `エラー: GPSが取得できませんでした (Code: ${err.code}). 位置情報サービスをONにしてください。`;
+                        console.error('Geolocation Error:', err);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 0,
+                        timeout: 5000
+                    }
+                );
             };
 
-            addDebugLog(`位置情報取得成功: ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`, 'success');
-
-            locationInfo.innerHTML = `
-              <strong>現在地:</strong><br>
-              緯度: ${userLocation.lat.toFixed(4)}<br>
-              経度: ${userLocation.lng.toFixed(4)}
-            `;
-
-            positionTargets();
-
-            loading.style.display = 'none';
-            scene.style.display = 'block';
-            infoPanel.style.display = 'block';
-
-            addDebugLog('ARシーン表示完了', 'success');
-
-            // モデル読み込み状態をチェック
-            setTimeout(checkModelStatus, 2000);
-          },
-          (error) => {
-            addDebugLog(`位置情報取得エラー: ${error.message}`, 'error');
-            loading.style.display = 'none';
-            startButton.style.display = 'block';
-            alert(`位置情報の取得に失敗: ${error.message}`);
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
-          }
-        );
-
-      } catch (error) {
-        addDebugLog(`初期化エラー: ${error.message}`, 'error');
-        console.error('AR初期化エラー:', error);
-        alert(`エラー: ${error.message}`);
-        loading.style.display = 'none';
-        startButton.style.display = 'block';
-      }
-    }
-
-    function positionTargets() {
-      if (!userLocation) return;
-
-      let bearingInfoText = '<strong>ターゲット方位:</strong><br>';
-
-      Object.keys(TARGETS).forEach(key => {
-        const target = TARGETS[key];
-        
-        const bearing = calculateBearing(
-          userLocation.lat, 
-          userLocation.lng,
-          target.lat,
-          target.lng
-        );
-
-        const position = bearingToPosition(bearing, target.distance);
-
-        const container = document.getElementById(target.containerId);
-        if (container) {
-          container.setAttribute('position', `${position.x} 1.6 ${position.z}`);
-          addDebugLog(`${target.name}配置: 方位=${bearing.toFixed(1)}° 位置=(${position.x.toFixed(2)}, 1.6, ${position.z.toFixed(2)})`, 'info');
-        }
-
-        bearingInfoText += `${target.name}: ${bearing.toFixed(1)}° (${target.distance}m先)<br>`;
-      });
-
-      bearingInfo.innerHTML = bearingInfoText;
-    }
-
-    function checkModelStatus() {
-      addDebugLog('=== モデル読み込み状態チェック ===', 'info');
-      
-      Object.keys(TARGETS).forEach(key => {
-        const target = TARGETS[key];
-        const model = document.getElementById(target.modelId);
-        const box = document.getElementById(target.boxId);
-        const container = document.getElementById(target.containerId);
-        
-        if (model) {
-          const modelLoaded = model.hasLoaded;
-          const hasObject3D = model.object3D && model.object3D.children.length > 0;
-          
-          addDebugLog(`${target.name}モデル: loaded=${modelLoaded}, object3D=${hasObject3D}`, 
-                      hasObject3D ? 'success' : 'warning');
-          
-          // モデルが読み込まれていればボックスを非表示、そうでなければボックスを表示
-          if (hasObject3D && model.object3D.children.length > 0) {
-            model.setAttribute('visible', 'true');
-            box.setAttribute('visible', 'false');
-            addDebugLog(`${target.name}: 3Dモデル表示`, 'success');
-          } else {
-            model.setAttribute('visible', 'false');
-            box.setAttribute('visible', 'true');
-            addDebugLog(`${target.name}: フォールバックボックス表示`, 'warning');
-          }
-        }
-        
-        // コンテナの可視性チェック
-        if (container) {
-          const visible = container.getAttribute('visible');
-          const position = container.getAttribute('position');
-          addDebugLog(`${target.name}コンテナ: visible=${visible}, position=${JSON.stringify(position)}`, 'info');
-        }
-      });
-    }
-
-    // モデル読み込みイベントリスナー
-    document.addEventListener('DOMContentLoaded', () => {
-      Object.keys(TARGETS).forEach(key => {
-        const target = TARGETS[key];
-        const model = document.getElementById(target.modelId);
-        
-        if (model) {
-          model.addEventListener('model-loaded', () => {
-            addDebugLog(`${target.name}モデル読み込み成功!`, 'success');
-            const box = document.getElementById(target.boxId);
-            model.setAttribute('visible', 'true');
-            box.setAttribute('visible', 'false');
-          });
-          
-          model.addEventListener('model-error', (e) => {
-            addDebugLog(`${target.name}モデル読み込みエラー: ${e.detail}`, 'error');
-            addDebugLog(`パス確認: ${target.modelPath}`, 'error');
-          });
-        }
-      });
-    });
-
-    startButton.addEventListener('click', initializeAR);
-
-    // 位置情報の継続的な更新
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(
-        (position) => {
-          if (userLocation) {
-            const newLat = position.coords.latitude;
-            const newLng = position.coords.longitude;
-            
-            const latDiff = Math.abs(newLat - userLocation.lat);
-            const lngDiff = Math.abs(newLng - userLocation.lng);
-            
-            if (latDiff > 0.0001 || lngDiff > 0.0001) {
-              userLocation = { lat: newLat, lng: newLng };
-              locationInfo.innerHTML = `
-                <strong>現在地:</strong><br>
-                緯度: ${userLocation.lat.toFixed(4)}<br>
-                経度: ${userLocation.lng.toFixed(4)}
-              `;
-              positionTargets();
-              addDebugLog('位置情報更新', 'info');
+            // DeviceOrientationEventの許可リクエスト
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            startGeolocation();
+                        } else {
+                            AR_STATUS.textContent = "エラー: デバイスの向き（ジャイロ）の許可が必要です。ページをリロードして再度許可してください。";
+                            console.error('Device Orientation Permission Denied');
+                        }
+                    })
+                    .catch(error => {
+                        AR_STATUS.textContent = "エラー: DeviceOrientationの許可リクエストに失敗しました。";
+                        console.error('requestPermission Error:', error);
+                    });
+            } else {
+                // requestPermissionが利用できないブラウザ（Androidなど）
+                startGeolocation();
             }
-          }
-        },
-        null,
-        {
-          enableHighAccuracy: true,
-          maximumAge: 5000
         }
-      );
-    }
-  </script>
+    </script>
+
 </body>
 </html>
