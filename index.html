@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>方位AR</title>
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+
+    <script>
+        // ==========================================
+        // カスタムコンポーネント: 指定した緯度経度の方角に、固定距離で配置する
+        // ==========================================
+        AFRAME.registerComponent('direction-target', {
+            schema: {
+                latitude: { type: 'number', default: 0 },
+                longitude: { type: 'number', default: 0 },
+                distance: { type: 'number', default: 30 } // 表示する距離(メートル)。30m先に表示
+            },
+            init: function () {
+                this.processed = false;
+                // GPSの更新イベントをリッスン
+                window.addEventListener('gps-camera-update-position', (e) => {
+                    if(this.processed) return; // 一度設定したら動かさない（固定）
+                    
+                    // 現在地を取得
+                    const currentPos = e.detail.position; 
+                    
+                    // ターゲットの方角（Bearing）を計算
+                    const bearing = this.calculateBearing(
+                        currentPos.latitude, 
+                        currentPos.longitude, 
+                        this.data.latitude, 
+                        this.data.longitude
+                    );
+
+                    // その方角の「すぐ近く（distanceメートル先）」の座標を計算
+                    const newCoords = this.calculateDestination(
+                        currentPos.latitude,
+                        currentPos.longitude,
+                        bearing,
+                        this.data.distance
+                    );
+
+                    // 計算した「近くの座標」をエンティティにセット
+                    this.el.setAttribute('gps-entity-place', {
+                        latitude: newCoords.latitude,
+                        longitude: newCoords.longitude
+                    });
+
+                    // 完了フラグ
+                    this.processed = true;
+                    console.log(`Object placed at bearing ${bearing} deg, dist ${this.data.distance}m`);
+                });
+            },
+
+            // 2点間の方位角を計算する関数
+            calculateBearing: function (startLat, startLng, destLat, destLng) {
+                const y = Math.sin(destLng * Math.PI / 180 - startLng * Math.PI / 180) * Math.cos(destLat * Math.PI / 180);
+                const x = Math.cos(startLat * Math.PI / 180) * Math.sin(destLat * Math.PI / 180) -
+                        Math.sin(startLat * Math.PI / 180) * Math.cos(destLat * Math.PI / 180) * Math.cos(destLng * Math.PI / 180 - startLng * Math.PI / 180);
+                const brng = Math.atan2(y, x) * 180 / Math.PI;
+                return (brng + 360) % 360;
+            },
+
+            // 指定した距離・方角の座標を求める関数
+            calculateDestination: function(lat, lng, bearing, distance) {
+                const R = 6371e3; // 地球の半径 (m)
+                const d = distance;
+                const lat1 = lat * Math.PI / 180;
+                const lon1 = lng * Math.PI / 180;
+                const brng = bearing * Math.PI / 180;
+
+                const lat2 = Math.asin( Math.sin(lat1)*Math.cos(d/R) +
+                    Math.cos(lat1)*Math.sin(d/R)*Math.cos(brng) );
+                const lon2 = lon1 + Math.atan2(Math.sin(brng)*Math.sin(d/R)*Math.cos(lat1),
+                    Math.cos(d/R)-Math.sin(lat1)*Math.sin(lat2));
+
+                return {
+                    latitude: lat2 * 180 / Math.PI,
+                    longitude: lon2 * 180 / Math.PI
+                };
+            }
+        });
+    </script>
+
+    <style>
+        body { margin: 0; overflow: hidden; }
+        .ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            z-index: 10;
+        }
+        .message {
+            margin-top: 20px;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-family: sans-serif;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ui-layer">
+        <div class="message">
+            周囲を見回して、富士山やを探してください。<br>
+            <small>※オブジェクトは30m先に表示されます</small>
+        </div>
+    </div>
+
+    <a-scene
+        vr-mode-ui="enabled: false"
+        embedded
+        arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;">
+
+        <a-camera gps-camera rotation-reader></a-camera>
+
+        <a-entity
+            direction-target="latitude: 35.3606; longitude: 138.7274;"
+            gltf-model="url(./assets/fuji_model.glb)"
+            scale="2 2 2"
+            look-at="[gps-camera]"
+            position="0 2 0">
+        </a-entity>
+        <a-entity
+            direction-target="latitude: 34.6851; longitude: 135.8398;"
+            gltf-model="url(./assets/ra.glb)"
+            scale="1 1 1"
+            look-at="[gps-camera]"
+            position="0 1 0">
+        </a-entity>
+
+        </a-scene>
+</body>
+</html>
