@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Location-Based AR Selection Menu</title>
+    <title>Location-Based AR Selection Menu & Model Fix</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimal-ui">
     <style>
         /* 全画面コンテナ */
@@ -55,11 +55,20 @@
             left: 0;
             width: 100%;
             height: 100%;
-            /* 選択されるまで非表示 */
             display: none; 
         }
 
-        /* ARステータス表示エリア */
+        /* A-Frameシーンを全画面表示 */
+        a-scene {
+            height: 100%;
+            width: 100%;
+        }
+
+        /* ------------------------------------- */
+        /* AR画面 UI要素 */
+        /* ------------------------------------- */
+
+        /* ステータス表示エリア */
         #ar-status {
             position: fixed;
             top: 10px;
@@ -71,12 +80,53 @@
             font-size: 0.9em;
             z-index: 1000;
         }
-        
-        /* A-Frameシーンを全画面表示 */
-        a-scene {
-            height: 100%;
-            width: 100%;
+
+        /* ハンバーガーメニューボタン */
+        #menu-button {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 10px 15px;
+            font-size: 1.5em;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 1000;
         }
+
+        /* ターゲット選択オーバーレイ */
+        #selection-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            color: white;
+            display: none; /* 初期は非表示 */
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 3000;
+        }
+        #selection-overlay button {
+            padding: 15px 30px;
+            margin: 10px;
+            font-size: 1.2em;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            cursor: pointer;
+        }
+        .back-button {
+             background-color: #f44336 !important;
+        }
+
     </style>
     
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
@@ -88,12 +138,14 @@
         
         <div id="menu-screen">
             <h1>表示するターゲットを選択してください</h1>
-            <button onclick="startAR('fuji')">🗻 富士山</button>
-            <button onclick="startAR('ranjatai')">🌿 蘭奢待 (正倉院)</button>
+            <button onclick="initialStartAR('fuji')">🗻 富士山</button>
+            <button onclick="initialStartAR('ranjatai')">🌿 蘭奢待 (正倉院)</button>
         </div>
 
         <div id="ar-screen">
             <div id="ar-status">ステータス: 初期化中...</div>
+            
+            <button id="menu-button" onclick="toggleSelectionOverlay()">☰</button>
 
             <a-scene 
                 id="ar-scene"
@@ -102,8 +154,15 @@
                 arjs="sourceType: webcam; debugUIEnabled: false;"
             >
                 <a-camera gps-camera rotation-reader></a-camera>
+            </a-scene>
+        </div>
 
-                </a-scene>
+        <div id="selection-overlay">
+            <h2>新しいターゲットを選択</h2>
+            <button onclick="changeTarget('fuji')">🗻 富士山に切り替える</button>
+            <button onclick="changeTarget('ranjatai')">🌿 蘭奢待に切り替える</button>
+            <button class="back-button" onclick="showInitialMenu()">メニューに戻る</button>
+            <button onclick="toggleSelectionOverlay()">閉じる</button>
         </div>
     </div>
 
@@ -116,58 +175,53 @@
         const AR_STATUS = document.getElementById('ar-status');
         const MENU_SCREEN = document.getElementById('menu-screen');
         const AR_SCREEN = document.getElementById('ar-screen');
+        const SELECTION_OVERLAY = document.getElementById('selection-overlay');
 
-        // 3Dモデルを配置する、カメラからの仮想的な距離（メートル）
         const VIRTUAL_DISTANCE_M = 8; 
+        let currentLocation = null; 
+        let currentTargetId = null; 
 
-        // ターゲット座標とモデル情報 (IDを追加)
+        // ターゲット座標とモデル情報 (単独表示のためoffsetXは0)
         const ALL_TARGETS = [
             {
-                id: 'fuji', // 選択用ID
+                id: 'fuji', 
                 name: 'Mt. Fuji (富士山)',
                 modelPath: './assets/fuji.glb',
                 lat: 35.3606,
                 lng: 138.7274,
-                scale: '0.5 0.5 0.5', 
-                offsetX: 0 // 重ならないように、単独選択の場合は中央(0)に配置
+                targetScale: 0.5, // スケール値を数値で定義
+                offsetX: 0 
             },
             {
-                id: 'ranjatai', // 選択用ID
+                id: 'ranjatai',
                 name: 'Ranjatai (蘭奢待 - 正倉院)',
                 modelPath: './assets/ra.glb',
                 lat: 34.6851,
                 lng: 135.8398,
-                scale: '0.5 0.5 0.5',
-                offsetX: 0 // 重ならないように、単独選択の場合は中央(0)に配置
+                targetScale: 0.5,
+                offsetX: 0 
             }
         ];
 
-        let currentLocation = null; // ユーザーの現在地
-
         // =======================================================================
-        // 5. 座標計算ロジック (変更なし)
+        // 5. 座標計算ロジック
         // =======================================================================
 
-        /**
-         * 2つのGPS座標から方位角（Bearing）を計算する（Haversineの派生）
-         */
         function calculateBearing(lat1, lng1, lat2, lng2) {
             const R_lat1 = lat1 * Math.PI / 180;
             const R_lat2 = lat2 * Math.PI / 180;
             const R_dLng = (lng2 - lng1) * Math.PI / 180;
-
             const y = Math.sin(R_dLng) * Math.cos(R_lat2);
             const x = Math.cos(R_lat1) * Math.sin(R_lat2) -
                       Math.sin(R_lat1) * Math.cos(R_lat2) * Math.cos(R_dLng);
 
             let bearing = Math.atan2(y, x) * 180 / Math.PI;
-            bearing = (bearing + 360) % 360;
-
-            return bearing;
+            return (bearing + 360) % 360;
         }
 
+
         // =======================================================================
-        // 6. 初期化とモデル配置
+        // 6. モデル配置ロジック (モデル崩れ修正の core)
         // =======================================================================
 
         /**
@@ -175,118 +229,102 @@
          * @param {string} targetId - 'fuji' または 'ranjatai'
          */
         function setupAREntities(targetId) {
-            if (!currentLocation) {
-                AR_STATUS.textContent = "ステータス: GPSデータなし。ARエンティティを配置できません。";
-                return;
+            if (!currentLocation) return;
+
+            // 既存のARエンティティを全て削除（切り替え時のクリーンアップ）
+            while (AR_SCENE.firstChild) {
+                if (AR_SCENE.firstChild.tagName !== 'A-CAMERA') {
+                    AR_SCENE.removeChild(AR_SCENE.firstChild);
+                }
             }
             
-            // 選択されたターゲットのみをフィルタリング
             const selectedTarget = ALL_TARGETS.find(t => t.id === targetId);
-
-            if (!selectedTarget) {
-                AR_STATUS.textContent = "エラー: 無効なターゲットが選択されました。";
-                return;
-            }
+            if (!selectedTarget) return;
 
             AR_STATUS.textContent = `ステータス: ${selectedTarget.name} のARオブジェクト配置中...`;
 
-            // 選択されたターゲットのみの配列を作成
-            const targetsToRender = [selectedTarget];
+            const target = selectedTarget;
 
-            targetsToRender.forEach(target => {
-                // 1. 現在地からターゲットへの方位角を計算
-                const bearing = calculateBearing(
-                    currentLocation.latitude, currentLocation.longitude,
-                    target.lat, target.lng
-                );
-                
-                // 2. 親エンティティを作成し、方位角に応じてY軸回転させる
-                const parentEntity = document.createElement('a-entity');
-                parentEntity.setAttribute('rotation', `0 ${bearing} 0`);
-                parentEntity.setAttribute('position', '0 0 0'); // カメラの原点
+            // 1. 現在地からターゲットへの方位角を計算
+            const bearing = calculateBearing(
+                currentLocation.latitude, currentLocation.longitude,
+                target.lat, target.lng
+            );
+            
+            // 2. 親エンティティを作成し、方位角に応じてY軸回転させる
+            const parentEntity = document.createElement('a-entity');
+            parentEntity.setAttribute('rotation', `0 ${bearing} 0`);
+            parentEntity.setAttribute('position', '0 0 0'); 
 
 
-                // 3. モデルエンティティ（子）を作成し、親エンティティの子として追加
-                const modelEntity = document.createElement('a-entity');
+            // 3. モデルエンティティ（子）を作成
+            const modelEntity = document.createElement('a-entity');
+            
+            // Z軸は仮想距離、X軸はオフセット
+            const modelPosString = `${target.offsetX} 0 ${-VIRTUAL_DISTANCE_M}`; 
+            modelEntity.setAttribute('position', modelPosString);
 
-                // Z軸は仮想距離、X軸はオフセット（単独選択のため offsetX は 0）
-                const modelPosString = `${target.offsetX} 0 ${-VIRTUAL_DISTANCE_M}`; 
-                
-                modelEntity.setAttribute('gltf-model', `url(${target.modelPath})`);
-                modelEntity.setAttribute('position', modelPosString);
-                modelEntity.setAttribute('scale', target.scale); 
-                
-                parentEntity.appendChild(modelEntity);
-
-                
-                // 4. テキストエンティティ（子）を作成
-                const textEntity = document.createElement('a-entity');
-                textEntity.setAttribute('text', {
-                    value: target.name + `\nBearing: ${bearing.toFixed(0)}°`,
-                    align: 'center',
-                    color: '#FFF',
-                    wrapCount: 30,
-                    width: 4
-                });
-                // モデルの上、かつオフセット位置に配置
-                textEntity.setAttribute('position', `${target.offsetX} 3 ${-VIRTUAL_DISTANCE_M}`); 
-                textEntity.setAttribute('look-at', '[gps-camera]'); 
-
-                parentEntity.appendChild(textEntity);
-
-                // シーンに追加
-                AR_SCENE.appendChild(parentEntity);
+            // GLTFモデルを設定。この段階ではスケールを設定せず、読み込み後に設定する
+            modelEntity.setAttribute('gltf-model', `url(${target.modelPath})`);
+            
+            // **** 【重要】モデル表示崩れ修正ロジック ****
+            // モデルが読み込まれたら（model-loadedイベント）、正しいスケールを適用
+            modelEntity.addEventListener('model-loaded', () => {
+                const s = target.targetScale;
+                modelEntity.setAttribute('scale', `${s} ${s} ${s}`);
+                AR_STATUS.textContent = `ステータス: ${target.name} AR準備完了`;
             });
+            // ********************************************
 
-            AR_STATUS.textContent = `ステータス: ${selectedTarget.name} AR準備完了`;
+            parentEntity.appendChild(modelEntity);
+
+            
+            // 4. テキストエンティティ（子）を作成
+            const textEntity = document.createElement('a-entity');
+            textEntity.setAttribute('text', {
+                value: target.name + `\nBearing: ${bearing.toFixed(0)}°`,
+                align: 'center',
+                color: '#FFF',
+                wrapCount: 30,
+                width: 4
+            });
+            // モデルの上、かつオフセット位置に配置
+            textEntity.setAttribute('position', `${target.offsetX} 3 ${-VIRTUAL_DISTANCE_M}`); 
+            textEntity.setAttribute('look-at', '[gps-camera]'); 
+
+            parentEntity.appendChild(textEntity);
+            AR_SCENE.appendChild(parentEntity);
+            
+            currentTargetId = targetId; // 現在表示中のターゲットを記録
         }
 
         // =======================================================================
-        // 7. AR開始フロー制御
+        // 7. ARフロー制御
         // =======================================================================
 
-        let selectedTargetId = null;
-
         /**
-         * メニューから呼び出され、選択されたIDを保持し、許可リクエストを開始する
-         * @param {string} id - 'fuji' or 'ranjatai'
+         * 1. 初期メニューからARを起動する際の処理 (GPS/ジャイロ許可リクエストを含む)
          */
-        function startAR(id) {
-            selectedTargetId = id;
-            requestDeviceOrientationAndGeolocation();
-        }
-
-
-        /**
-         * DeviceOrientationとGPSの許可をリクエストする
-         */
-        function requestDeviceOrientationAndGeolocation() {
-            MENU_SCREEN.style.display = 'none'; // メニューを非表示
-            AR_SCREEN.style.display = 'block';   // AR画面を表示
+        function initialStartAR(id) {
+            MENU_SCREEN.style.display = 'none'; 
+            AR_SCREEN.style.display = 'block';   
             AR_STATUS.textContent = "ステータス: 許可リクエスト中...";
+            currentTargetId = id;
 
             const startGeolocation = () => {
-                // GPSの取得
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
                         currentLocation = {
                             latitude: position.coords.latitude,
                             longitude: position.coords.longitude
                         };
-                        AR_STATUS.textContent = `ステータス: GPS取得完了 (Lat: ${currentLocation.latitude.toFixed(4)}, Lng: ${currentLocation.longitude.toFixed(4)})`;
-                        
-                        // GPS取得後、選択されたターゲットのみを配置
-                        setupAREntities(selectedTargetId);
+                        setupAREntities(id); // ARオブジェクトを配置
                     },
                     (err) => {
-                        AR_STATUS.textContent = `エラー: GPSが取得できませんでした (Code: ${err.code}). 位置情報サービスをONにしてください。`;
+                        AR_STATUS.textContent = `エラー: GPSが取得できませんでした。`;
                         console.error('Geolocation Error:', err);
                     },
-                    {
-                        enableHighAccuracy: true,
-                        maximumAge: 0,
-                        timeout: 5000
-                    }
+                    { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
                 );
             };
 
@@ -297,17 +335,54 @@
                         if (permissionState === 'granted') {
                             startGeolocation();
                         } else {
-                            AR_STATUS.textContent = "エラー: デバイスの向き（ジャイロ）の許可が必要です。ページをリロードして再度許可してください。";
-                            console.error('Device Orientation Permission Denied');
+                            AR_STATUS.textContent = "エラー: デバイスの向き（ジャイロ）の許可が必要です。";
                         }
-                    })
-                    .catch(error => {
-                        AR_STATUS.textContent = "エラー: DeviceOrientationの許可リクエストに失敗しました。";
-                        console.error('requestPermission Error:', error);
                     });
             } else {
-                // requestPermissionが利用できないブラウザ（Androidなど）
                 startGeolocation();
+            }
+        }
+
+        /**
+         * 2. ハンバーガーメニューからターゲットを切り替える際の処理
+         */
+        function changeTarget(id) {
+            if (id === currentTargetId) {
+                AR_STATUS.textContent = "ステータス: 同じターゲットが選択されました。";
+            } else if (currentLocation) {
+                setupAREntities(id); // ターゲットを再配置
+            } else {
+                // GPSがまだ取得できていない場合の再試行（基本的には initialStartAR で取得済み）
+                initialStartAR(id);
+            }
+            toggleSelectionOverlay(); // オーバーレイを閉じる
+        }
+
+        /**
+         * 3. ターゲット選択オーバーレイの表示/非表示を切り替える
+         */
+        function toggleSelectionOverlay() {
+            SELECTION_OVERLAY.style.display = SELECTION_OVERLAY.style.display === 'flex' ? 'none' : 'flex';
+        }
+
+        /**
+         * 4. 初期メニュー画面に戻る
+         */
+        function showInitialMenu() {
+            // ARシーンを非表示にし、初期メニューを表示
+            AR_SCREEN.style.display = 'none';
+            SELECTION_OVERLAY.style.display = 'none';
+            MENU_SCREEN.style.display = 'flex';
+            
+            // GPS情報をリセット (再起動時に再取得するため)
+            currentLocation = null;
+            currentTargetId = null;
+
+            // ARシーン内のモデルをすべて削除 (A-Frameのカメラ以外)
+            while (AR_SCENE.firstChild) {
+                if (AR_SCENE.firstChild.tagName !== 'A-CAMERA') {
+                    AR_SCENE.removeChild(AR_SCENE.firstChild);
+                }
             }
         }
     </script>
